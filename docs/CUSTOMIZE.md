@@ -17,6 +17,11 @@ adb pull  /sdcard/EchoClock/config.json
 adb push  config.json /sdcard/EchoClock/config.json
 ```
 
+> **With more than one device attached**, plain `adb` fails with
+> `more than one device/emulator` — add `-s <serial>` to each command, or
+> `export ANDROID_SERIAL=<serial>` once. Find the serial with `adb devices -l` (the line
+> showing `device:cronos`). Every `adb …` example below assumes that is already set.
+
 The full interface contract is [`docs/DESIGN.md`](DESIGN.md) §2.4, §7 and §8 — this page
 is the practical how-to.
 

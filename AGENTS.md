@@ -51,7 +51,10 @@ adb logcat -s EchoClock               # the app's log tag
 
 Don't run the device as part of a code change unless asked; the owner tests on hardware.
 
-**Trigger an action without touching the UI** (external action trigger, `DESIGN §7.3`):
+**Trigger an action without touching the UI** (external action trigger, `DESIGN §7.3`). Prefix
+`adb` with `-s <serial>` (or `export ANDROID_SERIAL=<serial>`) when more than one device is
+attached — otherwise adb errors with `more than one device/emulator`; `adb devices -l` shows
+which line is `device:cronos`:
 
 ```sh
 adb shell am start -n org.echoclock/.HomeActivity --es action "face:pomodoro"

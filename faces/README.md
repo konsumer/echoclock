@@ -46,8 +46,13 @@ just HTML files on `/sdcard`, you can edit them live with any file manager or ov
 `adb push` without rebuilding the app or rebooting:
 
 ```sh
-adb push faces/mycustom /sdcard/EchoClock/faces/
+adb -s <serial> push faces/mycustom /sdcard/EchoClock/faces/
 ```
+
+> **More than one device attached?** `adb` refuses to guess — you get
+> `more than one device/emulator`. Pass the target's serial with `-s`, or export it once:
+> `export ANDROID_SERIAL=<serial>`. Find it with `adb devices -l` (pick the line with
+> `device:cronos`). `install/provision.sh -s <serial>` does this for you.
 
 Then **swipe** to it (user faces come first, then bundled faces, alphabetical by name), switch
 from JS with `window.EC.setFace('mycustom')`, or trigger `face:mycustom` externally (see
