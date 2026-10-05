@@ -1,0 +1,11 @@
+{
+  "id": "analog",
+  "name": "Analog",
+  "author": "echoclock",
+  "description": "Smooth analog clock with hour, minute and second hands.",
+  "settings": [
+    { "key": "showSeconds", "label": "Second hand", "type": "bool", "default": true },
+    { "key": "showDate", "label": "Date", "type": "bool", "default": true },
+    { "key": "accent", "label": "Accent color", "type": "color", "default": "#4fd6ff" }
+  ]
+}

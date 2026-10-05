@@ -1,0 +1,107 @@
+name: Release APK
+
+# Push / PR  -> build the APK and upload it as a workflow artifact.
+# Tag v*    -> additionally create/update the GitHub Release and attach EchoClock.apk.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Default to read-only; the build job raises this to write for Releases.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build EchoClock.apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to attach EchoClock.apk to the Release on tags
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Accepts the SDK licences so Gradle/AGP can provision platform 34 /
+      # build-tools 34.0.0 automatically if the runner image lacks them.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # app/keystore.jks is gitignored, so CI must provide one.
+      #  - ECHOCLOCK_KEYSTORE_BASE64 set -> real release key from secrets.
+      #  - otherwise                     -> throwaway key (installable, not upgradeable).
+      - name: Prepare signing keystore
+        id: keystore
+        env:
+          ECHOCLOCK_KEYSTORE_BASE64: ${{ secrets.ECHOCLOCK_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ECHOCLOCK_KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$ECHOCLOCK_KEYSTORE_BASE64" | base64 -d > app/keystore.jks
+            echo "throwaway=false" >> "$GITHUB_OUTPUT"
+            echo "Using release keystore from ECHOCLOCK_KEYSTORE_BASE64 (alias echoclock)."
+          else
+            keytool -genkeypair -v \
+              -keystore app/keystore.jks \
+              -alias echoclock \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=EchoClock throwaway CI key, OU=EchoClock, O=EchoClock, C=US"
+            echo "throwaway=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Throwaway signing key::ECHOCLOCK_KEYSTORE_BASE64 is not set. This APK is signed with a throwaway key: it installs fine, but it is NOT suitable for upgrades — a device already running a release-signed build will refuse it (INSTALL_FAILED_UPDATE_INCOMPATIBLE)."
+          fi
+          ls -l app/keystore.jks
+
+      - name: Build release APK
+        working-directory: app
+        env:
+          # Absolute paths so they resolve regardless of Gradle project layout.
+          ECHOCLOCK_KEYSTORE_FILE: ${{ github.workspace }}/app/keystore.jks
+          ECHOCLOCK_KEYSTORE_PASSWORD: ${{ secrets.ECHOCLOCK_KEYSTORE_PASSWORD || 'android' }}
+          ECHOCLOCK_KEY_PASSWORD: ${{ secrets.ECHOCLOCK_KEY_PASSWORD || 'android' }}
+          ECHOCLOCK_KEY_ALIAS: echoclock
+        run: |
+          set -euo pipefail
+          # app/build.sh handles SDK/JDK detection and the release keystore; there are no
+          # native AARs to fetch any more (the app is pure Kotlin, no NDK).
+          chmod +x build.sh ./gradlew
+          bash build.sh
+
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          test -f app/out/EchoClock.apk
+          cp app/out/EchoClock.apk EchoClock.apk
+          ls -l EchoClock.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoClock.apk
+          path: EchoClock.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # On tag pushes only: create the Release (or upload into it if it exists).
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THROWAWAY: ${{ steps.keystore.outputs.throwaway }}
+        run: |
+          set -euo pipefail
+          if [ "$THROWAWAY" = "true" ]; then
+            echo "::warning title=Throwaway signing key::Releasing an APK signed with a throwaway key — installable, but NOT suitable for upgrades over a release-signed build."
+          fi
+          gh release create "$GITHUB_REF_NAME" EchoClock.apk \
+            --title "EchoClock $GITHUB_REF_NAME" \
+            --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" EchoClock.apk --clobber

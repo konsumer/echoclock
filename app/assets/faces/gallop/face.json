@@ -1,0 +1,17 @@
+{
+  "id": "gallop",
+  "name": "Gallop",
+  "author": "echoclock",
+  "description": "Muybridge-inspired animated galloping horse with time, next alarm, next event and weather.",
+  "settings": [
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false },
+    { "key": "showSeconds", "label": "Seconds", "type": "bool", "default": true },
+    { "key": "showAlarm", "label": "Next alarm", "type": "bool", "default": true },
+    { "key": "alarmDay", "label": "Alarm day (e.g. Tue)", "type": "bool", "default": true },
+    { "key": "showEvent", "label": "Next event", "type": "bool", "default": true },
+    { "key": "showWeather", "label": "Weather", "type": "bool", "default": true },
+    { "key": "tempUnit", "label": "Temperature unit", "type": "enum", "options": ["F", "C"], "default": "F" },
+    { "key": "animated", "label": "Animate the horse", "type": "bool", "default": true },
+    { "key": "pace", "label": "Pace", "type": "enum", "options": ["Slow", "Normal", "Fast"], "default": "Normal" }
+  ]
+}

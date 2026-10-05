@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Pomodoro</title>
+<style>
+  html,body{margin:0;width:960px;height:480px;overflow:hidden;background:#080a0f;color:#eef6ff;
+    font-family:"Helvetica Neue",Roboto,Arial,sans-serif;user-select:none;-webkit-user-select:none;cursor:none;}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;}
+  #now{font-size:34px;color:#8fb4c8;font-variant-numeric:tabular-nums;letter-spacing:.15em;}
+  #modeLabel{font-size:26px;letter-spacing:.4em;text-transform:uppercase;font-weight:600;}
+  #bigTimer{font-size:190px;line-height:1;font-weight:200;font-variant-numeric:tabular-nums;
+    padding:0 20px;text-shadow:0 0 50px rgba(255,90,90,.25);}
+  #bar{width:640px;height:12px;border-radius:6px;background:#161c24;overflow:hidden;}
+  #bar i{display:block;height:100%;width:100%;background:#ff5a5a;transition:background .3s;}
+  #btns{display:flex;gap:18px;margin-top:8px;}
+  #hint{font-size:17px;letter-spacing:.22em;text-transform:uppercase;color:#5b6b78;margin-top:6px;}
+  #state{font-size:18px;letter-spacing:.34em;text-transform:uppercase;color:#ff8a8a;height:22px;}
+  body.break #state{color:#7ef0b0;}
+  #bigTimer.holding{opacity:.6;}
+  #bigTimer.paused{opacity:.45;}
+  button{font:inherit;font-size:24px;padding:12px 34px;border-radius:30px;border:1px solid #2a3540;
+    background:#12181f;color:#cfe3f0;letter-spacing:.15em;text-transform:uppercase;}
+  button.active{background:#ff5a5a;border-color:#ff8a8a;color:#1a0808;}
+  button#bb.active{background:#35d07f;border-color:#7ef0b0;color:#04170d;}
+  body.break #bigTimer{text-shadow:0 0 50px rgba(60,220,140,.25);}
+  body.break #bar i{background:#35d07f;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="now">--:--</div>
+  <div id="modeLabel">FOCUS</div>
+  <div id="state">paused</div>
+  <div id="bigTimer" data-ec>25:00</div>
+  <div id="bar"><i></i></div>
+  <div id="btns">
+    <button id="bf">Focus</button>
+    <button id="bb">Break</button>
+  </div>
+  <div id="hint">tap the timer to start / pause</div>
+</div>
+<script>
+(function(){
+  var cfg={},st={};
+  var focusMs=25*60*1000, breakMs=5*60*1000;
+  var mode='focus', running=false, remain=focusMs, endAt=0;
+  function ps(v){if(v==null)return {};if(typeof v==='string'){try{return JSON.parse(v)||{};}catch(e){return {};}}return v;}
+  function pad(n){n=Math.max(0,Math.floor(n));return (n<10?'0':'')+n;}
+  function dur(){return mode==='break'?breakMs:focusMs;}
+  function fmt(ms){var s=Math.ceil(ms/1000);var m=Math.floor(s/60);s=s%60;return pad(m)+':'+pad(s);}
+  function setMode(m,reset){
+    if(m!=='focus'&&m!=='break')return;
+    var changed=(m!==mode);
+    mode=m;
+    if(changed||reset===true){remain=dur();if(running)endAt=Date.now()+remain;}
+    document.body.classList.toggle('break',mode==='break');
+    document.getElementById('modeLabel').textContent=mode==='break'?'Break':'Focus';
+    document.getElementById('bf').className=(mode==='focus')?'active':'';
+    document.getElementById('bb').className=(mode==='break')?'active':'';
+  }
+  function switchMode(m){
+    setMode(m,true);
+  }
+  function toggle(){running=!running;if(running)endAt=Date.now()+remain;syncState();}
+  // Start/Pause has no button (the timer itself is the control) — show the state instead.
+  function syncState(){
+    var el=document.getElementById('state');
+    if(el)el.textContent=running?'':'paused';
+    var b=document.getElementById('bigTimer');
+    if(b)b.classList.toggle('paused',!running);
+  }
+  function frame(){
+    var t=(typeof st.epoch==='number')?st.epoch:Date.now();
+    if(running){
+      remain=endAt-Date.now();
+      if(remain<=0){
+        remain=0;
+        var next=(mode==='focus')?'break':'focus';
+        running=true;
+        setMode(next,true);
+        endAt=Date.now()+remain;
+        syncState();
+      }
+    }
+    var d=new Date(t);
+    var h24=(cfg.format24h===true)||(cfg.hour12===false);
+    var h=d.getHours();if(!h24){h=h%12;if(h===0)h=12;}
+    document.getElementById('now').textContent=pad(h)+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    document.getElementById('bigTimer').textContent=fmt(remain);
+    var pct=Math.max(0,Math.min(1,remain/dur()))*100;
+    document.querySelector('#bar i').style.width=pct.toFixed(2)+'%';
+    requestAnimationFrame(frame);
+  }
+  window.ec={
+    config:function(c){
+      cfg=ps(c);
+      var fm=(typeof cfg.focusMinutes==='number'&&cfg.focusMinutes>0)?cfg.focusMinutes:((typeof cfg.focusMin==='number'&&cfg.focusMin>0)?cfg.focusMin:0);
+      var bm=(typeof cfg.breakMinutes==='number'&&cfg.breakMinutes>0)?cfg.breakMinutes:((typeof cfg.breakMin==='number'&&cfg.breakMin>0)?cfg.breakMin:0);
+      if(fm>0)focusMs=fm*60*1000;
+      if(bm>0)breakMs=bm*60*1000;
+      setMode(mode,true);
+    },
+    tick:function(s){
+      st=ps(s);
+    },
+    event:function(n,p){
+      if(p&&typeof p==='object'&&typeof p.epoch==='number'){
+        window.ec.tick(p);
+      }
+    }
+  };
+  // Hold the timer to start/pause (a quick tap works too). The launcher is told this element
+  // is interactive (data-ec) so it does not steal the press for its settings long-press.
+  var HOLD_MS=400, holdTimer=null, pressing=false, holdFired=false;
+  var big=document.getElementById('bigTimer');
+  function holdStart(){
+    if(pressing)return;
+    pressing=true; holdFired=false;
+    big.classList.add('holding');
+    holdTimer=setTimeout(function(){
+      holdFired=true; big.classList.remove('holding'); toggle();
+    },HOLD_MS);
+  }
+  function holdEnd(){
+    if(!pressing)return;
+    pressing=false; clearTimeout(holdTimer); big.classList.remove('holding');
+    if(!holdFired)toggle();
+  }
+  ['pointerdown','touchstart'].forEach(function(n){ big.addEventListener(n,holdStart,{passive:true}); });
+  ['pointerup','touchend','pointercancel','touchcancel','pointerleave'].forEach(function(n){ big.addEventListener(n,holdEnd,{passive:true}); });
+  document.getElementById('bf').addEventListener('click',function(){switchMode('focus');});
+  document.getElementById('bb').addEventListener('click',function(){switchMode('break');});
+  setMode('focus',true);
+  syncState();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

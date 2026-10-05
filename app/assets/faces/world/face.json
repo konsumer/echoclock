@@ -1,0 +1,11 @@
+{
+  "id": "world",
+  "name": "World",
+  "author": "echoclock",
+  "description": "Multiple timezones with city labels, configurable via cfg.",
+  "settings": [
+    { "key": "zones", "label": "Timezones (one per line)", "type": "list",
+      "default": ["Local", "America/New_York", "Europe/London", "Asia/Tokyo"] },
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false }
+  ]
+}

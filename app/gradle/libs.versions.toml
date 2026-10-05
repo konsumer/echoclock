@@ -1,0 +1,12 @@
+[versions]
+# Build toolchain pins (docs/DESIGN.md §3). Gradle itself is pinned in
+# gradle/wrapper/gradle-wrapper.properties, not here.
+agp = "8.7.3"
+kotlin = "2.0.21"
+compileSdk = "34"
+minSdk = "30"
+targetSdk = "30"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Gallop</title>
+<style>
+  html,body{margin:0;width:960px;height:480px;overflow:hidden;cursor:none;user-select:none;-webkit-user-select:none;
+    background:radial-gradient(120% 120% at 22% 0%,#171310 0%,#0d0b09 55%,#070605 100%);
+    color:#d8d0c2;font-family:"Helvetica Neue",Roboto,Arial,sans-serif;}
+  #wrap{position:fixed;inset:0;display:flex;}
+  #stage{flex:1;position:relative;padding:18px 8px 18px 20px;box-sizing:border-box;display:flex;flex-direction:column;}
+  #big{flex:1;width:100%;min-height:0;}
+  #strip{display:flex;gap:6px;justify-content:center;align-items:flex-end;height:46px;margin-top:4px;}
+  #strip svg{width:44px;height:30px;opacity:.28;transition:opacity .12s;}
+  #strip svg.on{opacity:1;}
+  #caption{margin-top:6px;text-align:center;font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:#7c7368;}
+
+  /* the horse */
+  .body{fill:#d9d1c3;}
+  .neck{fill:#d9d1c3;}
+  .head{fill:#ded6c8;}
+  .ear{fill:#c9c0b1;}
+  .mane{fill:none;stroke:#b9b0a1;stroke-width:6;stroke-linecap:round;}
+  .tail{fill:none;stroke:#c9c0b1;stroke-width:7;stroke-linecap:round;opacity:.9;}
+  .limb.near>path,.limb.near g path{stroke:#d3cabb;stroke-width:13;stroke-linecap:round;fill:none;}
+  .limb.near g g path{stroke-width:10;}
+  .limb.far>path,.limb.far g path{stroke:#5f5a52;stroke-width:12;stroke-linecap:round;fill:none;}
+  .limb.far g g path{stroke-width:9;}
+  .hoof{stroke-width:7 !important;stroke:#8f877a !important;}
+  .rule{stroke:#cfc6b8;stroke-width:1;opacity:.16;}
+  /* traced silhouettes (frames.js): near-white ink on the dark plate, even-odd for gaps */
+  .trace{fill:#f4efe4;stroke:none;}
+
+  /* info panel */
+  #panel{width:322px;box-sizing:border-box;padding:26px 24px 20px;display:flex;flex-direction:column;border-left:1px solid rgba(207,198,184,.14);}
+  /* the clock is always one line, with no AM/PM (the hour label would push it onto two) */
+  #time{font-weight:200;line-height:1;font-variant-numeric:tabular-nums;color:#efe7d8;white-space:nowrap;}
+  #time.nosec{font-size:86px;}
+  #time.sec{font-size:56px;}
+  #sec{color:#c9a86a;}
+  #date{margin-top:6px;font-size:17px;letter-spacing:.22em;text-transform:uppercase;color:#8d8477;}
+  .sep{height:1px;background:rgba(207,198,184,.18);margin:16px 0;}
+  .row{display:flex;gap:10px;align-items:baseline;padding:7px 0;}
+  .lbl{width:74px;flex:none;font-size:14px;letter-spacing:.24em;text-transform:uppercase;color:#c9a86a;}
+  .val{font-size:26px;color:#e6ded0;line-height:1.15;}
+  .val small{font-size:16px;color:#9d9488;}
+  .val .wx{color:#c9a86a;}
+  #foot{margin-top:auto;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:#6d655b;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <svg id="big" viewBox="0 0 420 280" preserveAspectRatio="xMidYMid meet" aria-label="galloping horse"></svg>
+    <div id="strip"></div>
+    <div id="caption">The Horse in Motion &middot; after Muybridge, 1878</div>
+  </div>
+  <div id="panel">
+    <div id="time">--:--</div>
+    <div id="date"></div>
+    <div class="sep"></div>
+    <div class="row" id="rAlarm"><span class="lbl">Alarm</span><span class="val" id="vAlarm"></span></div>
+    <div class="row" id="rEvent"><span class="lbl">Next</span><span class="val" id="vEvent"></span></div>
+    <div class="row" id="rWeather"><span class="lbl">Weather</span><span class="val" id="vWeather"></span></div>
+    <div id="foot">EchoClock</div>
+  </div>
+</div>
+<script src="frames.js"></script>
+<script>
+(function(){
+  var cfg={}, st={}, frame=0, timer=null, FRAMES=12;
+  // Traced silhouettes (frames.js) are used when present;
+  // otherwise the face falls back to a procedural horse so it still works on its own.
+  var TRACED=(window.EC_FRAMES&&window.EC_FRAMES.frames&&window.EC_FRAMES.frames.length)?window.EC_FRAMES:null;
+  if(TRACED)FRAMES=TRACED.frames.length;
+  function rules(){
+    return '<line class="rule" x1="20" y1="250" x2="400" y2="250"/>'+
+           '<line class="rule" x1="20" y1="262" x2="400" y2="262" opacity="0.08"/>';
+  }
+
+  function ps(v){if(v==null)return {};if(typeof v==='string'){try{return JSON.parse(v)||{};}catch(e){return {};}}return v;}
+  function pad(n){return (n<10?'0':'')+n;}
+  function is24(){return (cfg.format24h===true)||(cfg.hour12===false);}
+  function h12(h){h=h%12;if(h===0)h=12;return h;}
+  function parseHM(s){var m=/^(\d{1,2}):(\d{2})$/.exec(String(s||''));return m?{h:+m[1],m:+m[2]}:null;}
+  function hm(h,m){var ap=h<12?'AM':'PM';return is24()?(pad(h)+':'+pad(m)):(h12(h)+':'+pad(m)+' '+ap);}
+  function inText(mins){
+    if(typeof mins!=='number')return '';
+    var m=Math.max(0,Math.round(mins));
+    if(m<1)return 'now';
+    if(m<60)return 'in '+m+'m';
+    var h=Math.floor(m/60),r=m%60;
+    return 'in '+h+'h'+(r?' '+r+'m':'');
+  }
+  function wxIcon(code){
+    if(typeof code!=='number')return '\u2601';
+    if(code===0)return '\u2600';
+    if(code<=2)return '\u26C5';
+    if(code===3)return '\u2601';
+    if(code===45||code===48)return '\u2601';
+    if(code>=51&&code<=57)return '\u2614';
+    if(code>=61&&code<=67)return '\u2614';
+    if(code>=71&&code<=77)return '\u2744';
+    if(code>=80&&code<=82)return '\u2614';
+    if(code===85||code===86)return '\u2744';
+    if(code>=95)return '\u26A1';
+    return '\u2601';
+  }
+  function eventTitle(e){
+    var t=(e&&typeof e.title==='string')?e.title.trim():'';
+    return t||'Untitled';
+  }
+  // earliest timed event; all-day only when nothing timed remains
+  function pickNextEvent(cal){
+    if(!(cal instanceof Array))return null;
+    var timed=null,allDay=null;
+    for(var i=0;i<cal.length;i++){
+      var e=cal[i];if(!e)continue;
+      if(e.allDay===true){if(!allDay)allDay=e;}
+      else if(!timed)timed=e;
+    }
+    return timed||allDay;
+  }
+
+  // ---- the horse: 12 frames posed from a gait cycle -----------------------------
+  // Screen coords: +rotate() turns clockwise, so a negative angle swings a leg forward
+  // (the horse faces right).
+  var LEGS=[{id:'FF',ax:249,ay:168,cls:'far'},{id:'HF',ax:137,ay:167,cls:'far'},
+            {id:'FN',ax:258,ay:166,cls:'near'},{id:'HN',ax:146,ay:164,cls:'near'}];
+  function swing(x){return Math.sin(2*Math.PI*x);}
+  function bend(x){return 0.5-0.5*Math.cos(2*Math.PI*x);}
+  function pct(x){x=x%1;return x<0?x+1:x;}
+  function pose(i){
+    var t=pct(i/FRAMES);
+    var F=t, FF=pct(t+0.5), HN=pct(t+0.30), HF=pct(t+0.80);
+    return {
+      dy:-5*bend(2*t),
+      rot:2.0*swing(t),
+      FF:[-32*swing(FF),16+34*bend(FF)],
+      HF:[ 30*swing(HF),18+38*bend(HF)],
+      FN:[-32*swing(F), 16+34*bend(F)],
+      HN:[ 30*swing(HN),18+38*bend(HN)]
+    };
+  }
+  function horseMarkup(live,p){
+    function leg(l){
+      var a=p[l.id][0],b=p[l.id][1];
+      var u=live?(' id="'+l.id+'u"'):'',g=live?(' id="'+l.id+'l"'):'';
+      return '<g'+u+' class="limb '+l.cls+'" transform="translate('+l.ax+','+l.ay+') rotate('+a.toFixed(2)+')">'+
+               '<path d="M0,0 L0,52"/>'+
+               '<g'+g+' transform="translate(0,52) rotate('+b.toFixed(2)+')">'+
+                 '<path d="M0,0 L0,48"/>'+
+                 '<path class="hoof" d="M-6,48 L6,48"/>'+
+               '</g>'+
+             '</g>';
+    }
+    var far=leg(LEGS[0])+leg(LEGS[1]);
+    var near=leg(LEGS[2])+leg(LEGS[3]);
+    var body=''+
+      '<path class="tail" d="M128,108 q-40 8 -50 58"/>'+
+      '<ellipse class="body" cx="200" cy="132" rx="80" ry="41"/>'+
+      '<path class="neck" d="M256,118 L318,64 L344,86 L278,152 Z"/>'+
+      '<path class="mane" d="M300,74 q22 8 40 2"/>'+
+      '<path class="ear" d="M318,50 L324,30 L336,48 Z"/>'+
+      '<ellipse class="head" cx="338" cy="68" rx="30" ry="15" transform="rotate(26,338,68)"/>';
+    var id=live?' id="hg"':'';
+    return '<g'+id+' transform="translate(0,'+p.dy.toFixed(2)+') rotate('+p.rot.toFixed(2)+',200,160)">'+
+             far+body+near+
+           '</g>'+
+           '<line class="rule" x1="20" y1="250" x2="400" y2="250"/>'+
+           '<line class="rule" x1="20" y1="262" x2="400" y2="262" opacity="0.08"/>';
+  }
+  function buildBig(){
+    var svg=document.getElementById('big');
+    if(!svg)return;
+    if(TRACED){
+      svg.innerHTML='<path id="hp" class="trace" fill-rule="evenodd" transform="'+TRACED.transform+'" d="'+TRACED.frames[0]+'"/>'+rules();
+    }else{
+      svg.innerHTML=horseMarkup(true,pose(frame));
+    }
+  }
+  function buildStrip(){
+    var strip=document.getElementById('strip');
+    if(!strip)return;
+    var html='';
+    for(var i=0;i<FRAMES;i++){
+      var inner=TRACED
+        ?('<path class="trace" fill-rule="evenodd" transform="'+TRACED.transform+'" d="'+TRACED.frames[i]+'"/>')
+        :horseMarkup(false,pose(i));
+      html+='<svg viewBox="0 0 420 280" preserveAspectRatio="xMidYMid meet" data-f="'+i+'">'+inner+'</svg>';
+    }
+    strip.innerHTML=html;
+  }
+  function poseBig(){
+    if(TRACED){
+      var hp=document.getElementById('hp');
+      if(hp)hp.setAttribute('d',TRACED.frames[frame]);
+    }else{
+      var p=pose(frame), hg=document.getElementById('hg');
+      if(hg)hg.setAttribute('transform','translate(0,'+p.dy.toFixed(2)+') rotate('+p.rot.toFixed(2)+',200,160)');
+      for(var i=0;i<LEGS.length;i++){
+        var l=LEGS[i];
+        var u=document.getElementById(l.id+'u'), g=document.getElementById(l.id+'l');
+        if(u)u.setAttribute('transform','translate('+l.ax+','+l.ay+') rotate('+p[l.id][0].toFixed(2)+')');
+        if(g)g.setAttribute('transform','translate(0,52) rotate('+p[l.id][1].toFixed(2)+')');
+      }
+    }
+    var strip=document.getElementById('strip');
+    if(strip){
+      for(var n=0;n<strip.children.length;n++){
+        var el=strip.children[n];
+        if(el&&el.classList)el.classList.toggle('on',n===frame);
+      }
+    }
+  }
+  function intervalMs(){
+    var p=String(cfg.pace||'Normal').toLowerCase();
+    return p==='slow'?150:(p==='fast'?70:105);
+  }
+  function restart(){
+    if(timer){clearInterval(timer);timer=null;}
+    if(cfg.animated!==false){
+      timer=setInterval(function(){frame=(frame+1)%FRAMES;poseBig();},intervalMs());
+    }
+    poseBig();
+  }
+
+  // ---- info panel ---------------------------------------------------------------
+  function render(){
+    var t=(typeof st.epoch==='number')?st.epoch:Date.now();
+    var d=new Date(t);
+    var te=document.getElementById('time');
+    if(te){
+      // One line, no meridiem: 24-hour when asked for, otherwise 12-hour numbers only.
+      var hh=is24()?pad(d.getHours()):h12(d.getHours());
+      var base=hh+':'+pad(d.getMinutes());
+      if(cfg.showSeconds===true){
+        te.className='sec';
+        te.innerHTML=base+'<span id="sec">:'+pad(d.getSeconds())+'</span>';
+      }else{
+        te.className='nosec';
+        te.textContent=base;
+      }
+    }
+    var de=document.getElementById('date');
+    if(de){
+      var loc=typeof st.locale==='string'?st.locale:undefined;
+      try{de.textContent=new Intl.DateTimeFormat(loc,{weekday:'long',month:'long',day:'numeric'}).format(d);}
+      catch(e){try{de.textContent=d.toDateString();}catch(e2){de.textContent='';}}
+    }
+
+    // alarm
+    var ra=document.getElementById('rAlarm'), va=document.getElementById('vAlarm');
+    var al=(st&&st.nextAlarm&&typeof st.nextAlarm==='object')?st.nextAlarm:null;
+    var atxt='';
+    if(cfg.showAlarm!==false&&al&&typeof al.epoch==='number'){
+      var hmv=parseHM(al.time);
+      atxt=hmv?hm(hmv.h,hmv.m):hm(new Date(al.epoch).getHours(),new Date(al.epoch).getMinutes());
+      if(cfg.alarmDay!==false&&typeof al.dayOffset==='number'&&al.dayOffset>0&&al.weekday)atxt+=' <small>'+al.weekday+'</small>';
+    }
+    if(ra)ra.style.display=atxt?'':'none';
+    if(va)va.innerHTML=atxt;
+
+    // next event
+    var re=document.getElementById('rEvent'), ve=document.getElementById('vEvent');
+    var ev=(cfg.showEvent===false)?null:pickNextEvent(st.calendar);
+    var etxt='';
+    if(ev){
+      var when='';
+      if(ev.allDay===true)when='all day';
+      else if(typeof ev.begin==='number'){var eb=new Date(ev.begin);when=hm(eb.getHours(),eb.getMinutes());}
+      else when=inText(ev.inMinutes);
+      etxt=eventTitle(ev)+(when?(' <small>'+when+'</small>'):'');
+    }
+    if(re)re.style.display=etxt?'':'none';
+    if(ve)ve.innerHTML=etxt;
+
+    // weather
+    var rw=document.getElementById('rWeather'), vw=document.getElementById('vWeather');
+    var wx=st.weather, wtxt='';
+    if(cfg.showWeather!==false&&wx){
+      var u=(cfg.tempUnit==='C')?'C':'F';
+      var tv=(u==='F')?(typeof wx.tempF==='number'?wx.tempF:wx.tempC):(typeof wx.tempC==='number'?wx.tempC:wx.tempF);
+      if(typeof tv==='number'){
+        wtxt='<span class="wx">'+wxIcon(wx.code)+'</span> '+Math.round(tv)+'\u00b0'+u+
+              (typeof wx.text==='string'&&wx.text?(' <small>'+wx.text+(wx.stale===true?' (cached)':'')+'</small>'):'');
+      }
+    }
+    if(rw)rw.style.display=wtxt?'':'none';
+    if(vw)vw.innerHTML=wtxt;
+  }
+
+  window.ec={
+    config:function(c){cfg=ps(c);buildStrip();restart();render();},
+    tick:function(s){st=ps(s);render();},
+    event:function(n,p){if(p&&typeof p==='object'&&typeof p.epoch==='number')window.ec.tick(p);}
+  };
+
+  buildBig();
+  buildStrip();
+  restart();
+  render();
+  setInterval(render,1000);
+})();
+</script>
+</body>
+</html>

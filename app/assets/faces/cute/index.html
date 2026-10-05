@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cute</title>
+<style>
+  html,body{margin:0;width:960px;height:480px;overflow:hidden;color:#fff;cursor:none;
+    font-family:"Helvetica Neue",Roboto,Arial,sans-serif;user-select:none;-webkit-user-select:none;
+    background:radial-gradient(circle at 30% 20%,#3a1f5c 0%,#1a1030 55%,#0b0716 100%);}
+  #stars{position:fixed;inset:0;pointer-events:none;}
+  .star{position:absolute;color:#ffd9f0;opacity:.7;animation:tw 3s ease-in-out infinite;}
+  @keyframes tw{0%,100%{opacity:.25;transform:scale(.85);}50%{opacity:.9;transform:scale(1.1);}}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;}
+  #left{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding-left:20px;}
+  #time{font-size:176px;font-weight:300;line-height:1;font-variant-numeric:tabular-nums;
+    color:#fff;text-shadow:0 0 60px rgba(255,140,200,.5),0 6px 0 rgba(120,40,120,.3);}
+  #time.hassec{font-size:110px;}
+  #sec{color:#ffd0ec;}
+  #date{font-size:28px;letter-spacing:.3em;text-transform:uppercase;color:#e7b8ff;}
+  #bubble{background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);
+    border-radius:22px;padding:8px 22px;font-size:22px;color:#fff;letter-spacing:.15em;}
+  #event{position:fixed;top:12px;left:0;right:0;text-align:center;font-size:26px;letter-spacing:.06em;
+    color:#f2d6ff;text-shadow:0 0 24px rgba(255,140,200,.35);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;padding:0 28px;}
+  #event .dot{opacity:.55;padding:0 8px;}
+  #wx{position:fixed;bottom:12px;left:0;right:0;text-align:center;font-size:24px;letter-spacing:.12em;
+    color:#cfe3f0;text-shadow:0 0 18px rgba(120,200,255,.3);}
+  #catWrap{width:340px;display:flex;align-items:center;justify-content:center;}
+  .cat{animation:bob 2.4s ease-in-out infinite;transform-origin:center;}
+  @keyframes bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-16px);}}
+  .eyes{transform-box:fill-box;transform-origin:center;animation:blink 4s infinite;}
+  @keyframes blink{0%,92%,100%{transform:scaleY(1);}95%{transform:scaleY(.08);}}
+  .tail{transform-box:fill-box;transform-origin:8% 92%;animation:wag 1.2s ease-in-out infinite;}
+  @keyframes wag{0%,100%{transform:rotate(-9deg);}50%{transform:rotate(9deg);}}
+</style>
+</head>
+<body>
+<div id="stars"></div>
+<div id="event"></div>
+<div id="wx"></div>
+<div id="wrap">
+  <div id="left">
+    <div id="time">--:--</div>
+    <div id="date"></div>
+    <div id="bubble">hi! :)</div>
+  </div>
+  <div id="catWrap">
+    <svg class="cat" viewBox="0 0 260 260" width="300" height="300">
+      <path class="tail" d="M198 206 q64 -6 44 -78" stroke="#ff9ec4" stroke-width="16" fill="none" stroke-linecap="round"/>
+      <ellipse cx="130" cy="198" rx="72" ry="54" fill="#ffb3d1"/>
+      <path d="M70 74 L58 8 L124 50 Z" fill="#ffc6dd"/>
+      <path d="M190 74 L202 8 L136 50 Z" fill="#ffc6dd"/>
+      <path d="M76 64 L70 28 L106 52 Z" fill="#ff8fbb"/>
+      <path d="M184 64 L190 28 L154 52 Z" fill="#ff8fbb"/>
+      <circle cx="130" cy="122" r="80" fill="#ffc6dd"/>
+      <g class="eyes">
+        <ellipse cx="102" cy="120" rx="12" ry="16" fill="#3a2030"/>
+        <ellipse cx="158" cy="120" rx="12" ry="16" fill="#3a2030"/>
+        <circle cx="106" cy="113" r="4.5" fill="#fff"/>
+        <circle cx="162" cy="113" r="4.5" fill="#fff"/>
+      </g>
+      <path d="M124 142 L136 142 L130 150 Z" fill="#ff5f95"/>
+      <path d="M130 150 q-10 12 -20 2 M130 150 q10 12 20 2" stroke="#a04468" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <circle cx="84" cy="144" r="12" fill="#ff8fbb" opacity=".55"/>
+      <circle cx="176" cy="144" r="12" fill="#ff8fbb" opacity=".55"/>
+      <path d="M58 132 h-26 M58 146 h-24 M202 132 h26 M202 146 h24" stroke="#e58bb0" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+</div>
+<script>
+(function(){
+  var cfg={},st={};
+  function ps(v){if(v==null)return {};if(typeof v==='string'){try{return JSON.parse(v)||{};}catch(e){return {};}}return v;}
+  function pad(n){return (n<10?'0':'')+n;}
+  (function stars(){
+    var s=document.getElementById('stars');
+    for(var i=0;i<26;i++){
+      var e=document.createElement('div');
+      e.className='star';
+      e.textContent=(i%3===0)?'\u2665':'\u2726';
+      e.style.left=(Math.random()*960)+'px';
+      e.style.top=(Math.random()*480)+'px';
+      e.style.fontSize=(12+Math.random()*20)+'px';
+      e.style.animationDelay=(Math.random()*3)+'s';
+      s.appendChild(e);
+    }
+  })();
+  function render(){
+    var t=(typeof st.epoch==='number')?st.epoch:Date.now();
+    var d=new Date(t);
+    var h24=(cfg.format24h===true)||(cfg.hour12===false);
+    var h=d.getHours();if(!h24){h=h%12;if(h===0)h=12;}
+    var tt=document.getElementById('time');
+    if(cfg.showSeconds===true){
+      tt.className='hassec';
+      tt.innerHTML=pad(h)+':'+pad(d.getMinutes())+'<span id="sec">:'+pad(d.getSeconds())+'</span>';
+    }else{
+      tt.className='';
+      tt.textContent=pad(h)+':'+pad(d.getMinutes());
+    }
+    var de=document.getElementById('date');
+    if(cfg.showDate===false){de.textContent='';}
+    else{
+      var loc=typeof st.locale==='string'?st.locale:undefined;
+      try{de.textContent=new Intl.DateTimeFormat(loc,{weekday:'long',month:'long',day:'numeric'}).format(d);}
+      catch(e){try{de.textContent=d.toDateString();}catch(e2){de.textContent='';}}
+    }
+    var b=document.getElementById('bubble');
+    var hrs=d.getHours();
+    b.textContent=(hrs<6)?'zzz...':(hrs<12)?'good morning!':(hrs<18)?'hi! :)' :(hrs<22)?'good evening!':'sleepy...';
+
+    // top: the single next calendar event (blank/hidden when there is none)
+    var evEl=document.getElementById('event');
+    if(evEl){
+      var ev=(cfg.showEvent===false)?null:pickNextEvent(st.calendar);
+      if(!ev){evEl.style.display='none';evEl.textContent='';}
+      else{
+        var title=eventTitle(ev);
+        if(title.length>44)title=title.slice(0,43)+'\u2026';
+        var when='';
+        if(ev.allDay)when='all day';
+        else if(typeof ev.begin==='number'){
+          var ed=new Date(ev.begin);var eh=ed.getHours();
+          if(!h24){eh=eh%12;if(eh===0)eh=12;}
+          when=pad(eh)+':'+pad(ed.getMinutes());
+        }
+        evEl.innerHTML='';
+        evEl.appendChild(document.createTextNode(title));
+        if(when){var sp=document.createElement('span');sp.className='dot';sp.textContent='\u00b7';evEl.appendChild(sp);evEl.appendChild(document.createTextNode(when));}
+        evEl.style.display='';
+      }
+    }
+
+    // bottom: small current-weather indicator (icon + temperature)
+    var wxEl=document.getElementById('wx');
+    if(wxEl){
+      var wx=st.weather;
+      // Unit is a per-face setting (default °F); the app supplies both values.
+      var u=(cfg.tempUnit==='C')?'C':'F';
+      var tv=wx?((u==='F')?(typeof wx.tempF==='number'?wx.tempF:wx.tempC)
+                          :(typeof wx.tempC==='number'?wx.tempC:wx.tempF)):null;
+      if(cfg.showWeather===false||typeof tv!=='number'){wxEl.style.display='none';wxEl.textContent='';}
+      else{
+        wxEl.textContent=wxIcon(wx.code)+'  '+Math.round(tv)+'\u00b0'+u;
+        wxEl.title=(typeof wx.text==='string'?wx.text:'');
+        wxEl.style.opacity=(wx.stale===true)?'0.5':'0.9';
+        wxEl.style.display='';
+      }
+    }
+  }
+  // Earliest *timed* event wins; all-day entries only stand in when there is no timed one
+  // (they start at midnight and would otherwise always sort first). Untitled -> "Untitled".
+  function eventTitle(e){
+    var t=(e&&typeof e.title==='string')?e.title.trim():'';
+    return t||'Untitled';
+  }
+  function pickNextEvent(cal){
+    if(!(cal instanceof Array))return null;
+    var timed=null, allDay=null;
+    for(var i=0;i<cal.length;i++){
+      var e=cal[i]; if(!e)continue;
+      if(e.allDay===true){ if(!allDay)allDay=e; }
+      else if(!timed)timed=e;
+    }
+    return timed||allDay;
+  }
+  // WMO weather code -> a plain-text glyph (safe without an emoji font)
+  function wxIcon(code){
+    if(typeof code!=='number')return '\u2601';
+    if(code===0)return '\u2600';
+    if(code<=2)return '\u26C5';
+    if(code===3)return '\u2601';
+    if(code===45||code===48)return '\u2601';
+    if(code>=51&&code<=57)return '\u2614';
+    if(code>=61&&code<=67)return '\u2614';
+    if(code>=71&&code<=77)return '\u2744';
+    if(code>=80&&code<=82)return '\u2614';
+    if(code===85||code===86)return '\u2744';
+    if(code>=95)return '\u26A1';
+    return '\u2601';
+  }
+  window.ec={
+    config:function(c){cfg=ps(c);render();},
+    tick:function(s){st=ps(s);render();},
+    event:function(n,p){if(p&&typeof p==='object'&&typeof p.epoch==='number'){window.ec.tick(p);}}
+  };
+  render();
+  setInterval(render,1000);
+})();
+</script>
+</body>
+</html>

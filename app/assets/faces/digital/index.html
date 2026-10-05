@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Digital</title>
+<style>
+  html,body{margin:0;width:960px;height:480px;overflow:hidden;background:#05070a;color:#e8f4ff;
+    font-family:"Helvetica Neue",Roboto,Arial,sans-serif;user-select:none;-webkit-user-select:none;cursor:none;}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
+  #time{font-weight:200;letter-spacing:.01em;line-height:1;font-variant-numeric:tabular-nums;
+    text-shadow:0 0 60px rgba(64,200,255,.35);white-space:nowrap;}
+  #time.big{font-size:300px;}
+  #time.sec{font-size:168px;}
+  #time.big.sm{font-size:216px;}
+  #time.sec.sm{font-size:126px;}
+  #sec{color:#4fd6ff;}
+  #date{font-size:30px;font-weight:300;letter-spacing:.3em;text-transform:uppercase;color:#7ea8bd;height:36px;}
+  #info{display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.25;font-size:22px;
+    color:#8fb4c8;min-height:0;}
+  #info>div{display:none;max-width:900px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  #info>div.on{display:block;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="time" class="big">--:--</div>
+  <div id="date"></div>
+  <div id="info">
+    <div id="iAlarm"></div>
+    <div id="iEvent"></div>
+    <div id="iWeather"></div>
+  </div>
+</div>
+<script>
+(function(){
+  var cfg={},st={};
+  function accColor(){return (typeof cfg.accent==='string'&&cfg.accent)?cfg.accent:'#4fd6ff';}
+  function ps(v){if(v==null)return {};if(typeof v==='string'){try{return JSON.parse(v)||{};}catch(e){return {};}}return v;}
+  function pad(n){return (n<10?'0':'')+n;}
+  function is24(){return (cfg.format24h===true)||(cfg.hour12===false);}
+  function clockH(h){h=h%12;if(h===0)h=12;return h;}
+  // v3 (DESIGN §9.2): next alarm / next event / weather helpers; all inputs optional.
+  function hhmm(ms){
+    var d=new Date(ms);
+    if(is24())return pad(d.getHours())+':'+pad(d.getMinutes());
+    return clockH(d.getHours())+':'+pad(d.getMinutes())+' '+(d.getHours()<12?'AM':'PM');
+  }
+  function inText(mins){
+    var m=Math.round(mins);
+    if(m<=0)return 'now';
+    if(m<60)return 'in '+m+' min';
+    var h=Math.floor(m/60),r=m%60;
+    return 'in '+h+'h'+(r?(' '+r+'m'):'');
+  }
+  // Temperature unit is a per-face setting (default °F). The app always supplies both tempC
+  // and tempF, so no conversion is needed here.
+  function tempUnit(){return (cfg.tempUnit==='C')?'C':'F';}
+  function tempOf(w,u){
+    var v=(u==='F')?w.tempF:w.tempC;
+    if(typeof v!=='number')v=(u==='F')?w.tempC:w.tempF;
+    return (typeof v==='number')?v:null;
+  }
+  function weatherText(w){
+    if(!w||typeof w!=='object')return '';
+    var u=tempUnit(),t=tempOf(w,u);
+    if(t===null)return '';
+    return Math.round(t)+'\u00b0'+u+' '+(typeof w.text==='string'?w.text:'')+(w.stale===true?' (stale)':'');
+  }
+  // The "next event" is the earliest *timed* event; all-day entries only stand in when there
+  // is no timed one (they begin at midnight, so they would otherwise always win the ordering).
+  // Untitled events are shown as "Untitled" rather than skipped.
+  function eventTitle(e){
+    var t=(e&&typeof e.title==='string')?e.title.trim():'';
+    return t||'Untitled';
+  }
+  function pickNextEvent(cal){
+    if(!(cal instanceof Array))return null;
+    var timed=null, allDay=null;
+    for(var i=0;i<cal.length;i++){
+      var e=cal[i]; if(!e)continue;
+      if(e.allDay===true){ if(!allDay)allDay=e; }
+      else if(!timed)timed=e;
+    }
+    return timed||allDay;
+  }
+  // How a *later* alarm is shown is the face's choice. The digital face appends the weekday
+  // when the alarm is not today, unless the "Alarm day" face setting is off. dayOffset /
+  // weekday come from the app (already resolved in the device timezone).
+  function alarmText(a){
+    var s='Alarm '+hhmm(a.epoch);
+    if(cfg.alarmDay!==false&&typeof a.dayOffset==='number'&&a.dayOffset>0&&a.weekday)s+=' '+a.weekday;
+    return s;
+  }
+  function setLine(el,txt){
+    if(!el)return false;
+    var s=(typeof txt==='string')?txt:'';
+    el.textContent=s;
+    el.className=s?'on':'';
+    return !!s;
+  }
+  function render(){
+    var t=(typeof st.epoch==='number')?st.epoch:Date.now();
+    var d=new Date(t);
+    var h24=is24();
+    var h=d.getHours();
+    if(!h24)h=clockH(h);
+    var ts=pad(h)+':'+pad(d.getMinutes());
+    // Optional v3 lines, each behind a face setting and hidden when data is absent.
+    var alarm=(st&&st.nextAlarm&&typeof st.nextAlarm==='object')?st.nextAlarm:null;
+    var cal=(st&&st.calendar instanceof Array)?st.calendar:[];
+    var w=(st&&st.weather&&typeof st.weather==='object')?st.weather:null;
+    var any=false;
+    if(setLine(document.getElementById('iAlarm'),
+      (cfg.showNextAlarm!==false&&alarm&&typeof alarm.epoch==='number')?alarmText(alarm):''))any=true;
+    var ev=pickNextEvent(cal);
+    if(setLine(document.getElementById('iEvent'),
+      (cfg.showNextEvent!==false&&ev)
+        ?(eventTitle(ev)+' '+((ev.allDay===true)?'all day':inText(ev.inMinutes))):''))any=true;
+    if(setLine(document.getElementById('iWeather'),
+      (cfg.showWeather!==false)?weatherText(w):''))any=true;
+    var tt=document.getElementById('time');
+    if(cfg.showSeconds===true){
+      tt.className='sec'+(any?' sm':'');
+      tt.innerHTML=ts+'<span id="sec">:'+pad(d.getSeconds())+'</span>';
+    }else{
+      tt.className='big'+(any?' sm':'');
+      tt.textContent=ts;
+    }
+    var se=document.getElementById('sec');
+    if(se)se.style.color=accColor();
+    var de=document.getElementById('date');
+    if(cfg.showDate===false){de.textContent='';}
+    else{
+      var loc=typeof st.locale==='string'?st.locale:undefined;
+      try{de.textContent=new Intl.DateTimeFormat(loc,{weekday:'long',month:'long',day:'numeric'}).format(d);}
+      catch(e){try{de.textContent=d.toDateString();}catch(e2){de.textContent='';}}
+    }
+  }
+  window.ec={
+    config:function(c){cfg=ps(c);render();},
+    tick:function(s){st=ps(s);render();},
+    event:function(n,p){if(p&&typeof p==='object'&&typeof p.epoch==='number'){window.ec.tick(p);}}
+  };
+  render();
+  setInterval(render,1000);
+})();
+</script>
+</body>
+</html>

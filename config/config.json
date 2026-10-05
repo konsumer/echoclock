@@ -1,0 +1,13 @@
+{
+  "defaultFace": "digital",
+  "brightness": 0.7,
+
+  "weather": { "enabled": true, "lat": 37.77, "lon": -122.42, "refreshMinutes": 30 },
+  "calendar": { "enabled": true, "maxEvents": 4, "horizonHours": 48 },
+
+  "faces": {
+    "digital": { "showSeconds": true, "showDate": true, "format24h": false, "accent": "#4fd6ff" },
+    "world": { "zones": ["America/Los_Angeles", "America/New_York", "Europe/London", "Asia/Tokyo"] },
+    "pomodoro": { "focusMinutes": 25, "breakMinutes": 5 }
+  }
+}

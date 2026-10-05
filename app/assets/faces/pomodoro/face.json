@@ -1,0 +1,11 @@
+{
+  "id": "pomodoro",
+  "name": "Pomodoro",
+  "author": "echoclock",
+  "description": "25/5 focus timer with start/pause/break buttons, plus the current time.",
+  "settings": [
+    { "key": "focusMinutes", "label": "Focus minutes", "type": "int", "min": 1, "max": 180, "default": 25 },
+    { "key": "breakMinutes", "label": "Break minutes", "type": "int", "min": 1, "max": 60, "default": 5 },
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false }
+  ]
+}

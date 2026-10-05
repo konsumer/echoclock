@@ -1,0 +1,12 @@
+{
+  "id": "flip",
+  "name": "Flip",
+  "author": "echoclock",
+  "description": "Split-flap digital clock with animated digit flips.",
+  "settings": [
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false },
+    { "key": "showSeconds", "label": "Seconds", "type": "bool", "default": false },
+    { "key": "showDate", "label": "Date", "type": "bool", "default": true },
+    { "key": "accent", "label": "Accent color", "type": "color", "default": "#3fd0ff" }
+  ]
+}

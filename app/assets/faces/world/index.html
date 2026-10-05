@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>World</title>
+<style>
+  html,body{margin:0;width:960px;height:480px;overflow:hidden;background:#060a0f;color:#eaf6ff;
+    font-family:"Helvetica Neue",Roboto,Arial,sans-serif;user-select:none;-webkit-user-select:none;cursor:none;}
+  #grid{position:fixed;inset:0;display:grid;gap:14px;padding:22px;box-sizing:border-box;}
+  .cell{background:#0d141c;border:1px solid #1a2530;border-radius:16px;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;overflow:hidden;}
+  .city{color:#7fa6bb;letter-spacing:.24em;text-transform:uppercase;}
+  .tm{font-weight:200;font-variant-numeric:tabular-nums;line-height:1;
+    text-shadow:0 0 36px rgba(63,208,255,.25);}
+  .dt{color:#4f6c7c;letter-spacing:.15em;text-transform:uppercase;}
+  .sec{color:#3fd0ff;}
+</style>
+</head>
+<body>
+<div id="grid"></div>
+<script>
+(function(){
+  var cfg={},st={};
+  var DEF=[
+    {city:'Local',tz:null},
+    {city:'New York',tz:'America/New_York'},
+    {city:'London',tz:'Europe/London'},
+    {city:'Tokyo',tz:'Asia/Tokyo'}
+  ];
+  var items=[],fmts=[],dtf=[];
+  function ps(v){if(v==null)return {};if(typeof v==='string'){try{return JSON.parse(v)||{};}catch(e){return {};}}return v;}
+  function pad(n){return (n<10?'0':'')+n;}
+  function label(tz){if(!tz)return 'Local';var p=String(tz).split('/');return p[p.length-1].replace(/_/g,' ');}
+  function norm(list){
+    var out=[];
+    if(typeof list==='string'){list=list.split(/\n+/).map(function(s){return s.trim();}).filter(function(s){return s.length>0;});}
+    if(!list||!list.length)return DEF;
+    for(var i=0;i<list.length&&i<8;i++){
+      var it=list[i];
+      if(typeof it==='string')out.push({city:label(it),tz:it});
+      else if(it&&typeof it==='object')out.push({city:it.city||label(it.tz),tz:it.tz||null});
+    }
+    return out.length?out:DEF;
+  }
+  function build(){
+    items=norm(cfg.zones||cfg.cities||cfg.list);
+    var g=document.getElementById('grid');
+    fmts=[];dtf=[];
+    var n=items.length;
+    var cols=Math.min(n,(n<=3)?1:2);
+    var rows=Math.ceil(n/cols);
+    var big=(cols===1||n<=3);
+    var tmSize=big?96:(rows<=2?64:52);
+    g.style.gridTemplateColumns='repeat('+cols+',1fr)';
+    g.style.gridTemplateRows='repeat('+rows+',1fr)';
+    g.innerHTML='';
+    for(var i=0;i<n;i++){
+      var c=document.createElement('div');c.className='cell';
+      var city=document.createElement('div');city.className='city';
+      city.style.fontSize=(big?22:17)+'px';
+      city.textContent=items[i].city;
+      var tm=document.createElement('div');tm.className='tm';
+      tm.style.fontSize=tmSize+'px';
+      var dt=document.createElement('div');dt.className='dt';
+      dt.style.fontSize=(big?17:13)+'px';
+      c.appendChild(city);c.appendChild(tm);c.appendChild(dt);
+      g.appendChild(c);
+      var loc=typeof st.locale==='string'?st.locale:undefined;
+      var opts={hour:'2-digit',minute:'2-digit',hour12:(cfg.format24h===true?false:true)};
+      var dopts={weekday:'short',month:'short',day:'numeric'};
+      try{
+        fmts.push(new Intl.DateTimeFormat(loc,
+          items[i].tz?Object.assign({timeZone:items[i].tz},opts):opts));
+      }catch(e){fmts.push(null);}
+      try{
+        dtf.push(new Intl.DateTimeFormat(loc,
+          items[i].tz?Object.assign({timeZone:items[i].tz},dopts):dopts));
+      }catch(e){dtf.push(null);}
+      items[i]._tm=tm;items[i]._dt=dt;
+    }
+  }
+  function render(){
+    var t=(typeof st.epoch==='number')?st.epoch:Date.now();
+    var d=new Date(t);
+    for(var i=0;i<items.length;i++){
+      var str,tmOk=true;
+      if(fmts[i]){try{str=fmts[i].format(d);}catch(e){tmOk=false;}}
+      else tmOk=false;
+      if(!tmOk){str=pad(d.getHours())+':'+pad(d.getMinutes());}
+      items[i]._tm.textContent=str;
+      if(dtf[i]){try{items[i]._dt.textContent=dtf[i].format(d);}catch(e){items[i]._dt.textContent='';}}
+      else{items[i]._dt.textContent='';}
+    }
+  }
+  window.ec={
+    config:function(c){
+      cfg=ps(c);
+      build();render();
+    },
+    tick:function(s){st=ps(s);render();},
+    event:function(n,p){if(p&&typeof p==='object'&&typeof p.epoch==='number'){window.ec.tick(p);}}
+  };
+  build();render();
+  setInterval(render,1000);
+})();
+</script>
+</body>
+</html>

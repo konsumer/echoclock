@@ -1,0 +1,11 @@
+{
+  "id": "binary",
+  "name": "Binary",
+  "author": "echoclock",
+  "description": "Binary-coded-decimal clock with columns for H/M/S.",
+  "settings": [
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false },
+    { "key": "showSeconds", "label": "Seconds", "type": "bool", "default": true },
+    { "key": "accent", "label": "Accent color", "type": "color", "default": "#3fd0ff" }
+  ]
+}

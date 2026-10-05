@@ -1,0 +1,14 @@
+{
+  "id": "cute",
+  "name": "Cute",
+  "author": "echoclock",
+  "description": "Friendly playful clock with an animated character.",
+  "settings": [
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false },
+    { "key": "showSeconds", "label": "Seconds", "type": "bool", "default": false },
+    { "key": "showDate", "label": "Date", "type": "bool", "default": true },
+    { "key": "showEvent", "label": "Next event", "type": "bool", "default": true },
+    { "key": "showWeather", "label": "Weather", "type": "bool", "default": true },
+    { "key": "tempUnit", "label": "Temperature unit", "type": "enum", "options": ["F", "C"], "default": "F" }
+  ]
+}
