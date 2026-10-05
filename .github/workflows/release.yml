@@ -22,18 +22,44 @@ jobs:
       contents: write # needed to attach EchoClock.apk to the Release on tags
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17 (temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
-      # Accepts the SDK licences so Gradle/AGP can provision platform 34 /
-      # build-tools 34.0.0 automatically if the runner image lacks them.
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # The ubuntu runners already ship the Android SDK. We only need the licences accepted
+      # (so Gradle/AGP may provision anything missing) and our compileSdk present.
+      #
+      # Do NOT use android-actions/setup-android@v3 here: it runs `sdkmanager tools`, and
+      # Google removed the legacy `tools` package, so the step dies with exit code 1 before
+      # the build even starts.
+      - name: Prepare Android SDK
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          [ -d "$SDK" ] || { echo "no Android SDK at $SDK" >&2; exit 1; }
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+
+          SDKMGR="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -1)"
+          [ -n "$SDKMGR" ] || { echo "sdkmanager not found under $SDK" >&2; exit 1; }
+          echo "SDK: $SDK"
+          echo "sdkmanager: $SDKMGR"
+
+          # `yes` gets SIGPIPE when sdkmanager stops reading, hence the `|| true`.
+          yes | "$SDKMGR" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
+
+          for pkg in "platform-tools" "platforms;android-34" "build-tools;34.0.0"; do
+            echo "==> ensuring $pkg"
+            "$SDKMGR" --sdk_root="$SDK" "$pkg" >/dev/null 2>&1 \
+              || echo "   (not installed; Gradle/AGP will provision it if it can)"
+          done
+
+          echo "==> installed packages:"
+          "$SDKMGR" --sdk_root="$SDK" --list_installed 2>/dev/null | sed -n '1,20p' || true
 
       # app/keystore.jks is gitignored, so CI must provide one.
       #  - ECHOCLOCK_KEYSTORE_BASE64 set -> real release key from secrets.
@@ -83,7 +109,7 @@ jobs:
           ls -l EchoClock.apk
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EchoClock.apk
           path: EchoClock.apk
