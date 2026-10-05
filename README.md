@@ -45,6 +45,9 @@ flashing.
 - **On the clock today** — upcoming **calendar** events, the **next alarm** (hands off to the
   system Clock app) and local **weather** (open-meteo.com, no API key, cached on disk), plus a
   dedicated **`agenda`** face ([DESIGN §8](docs/DESIGN.md)).
+- **Also a Bluetooth speaker** — the LineageOS port enables the A2DP sink, so you can pair a
+  phone and play through the Echo's speaker while the clock keeps running
+  ([docs/USAGE.md](docs/USAGE.md) → *Using it as a Bluetooth speaker*).
 - **Seven external actions** — `face:<id>`, `app:<pkg>`, `nextFace`, `prevFace`, `openDrawer`,
   `weather:refresh`, `calendar:refresh` over adb, Tasker or Home Assistant
   ([DESIGN §7.3](docs/DESIGN.md)).

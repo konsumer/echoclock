@@ -53,6 +53,23 @@ Which of these each face shows is a per-face setting (**long-press the clock**),
 temperature unit (**°F or °C**, default **°F**). The weather latitude/longitude live in
 `config.json` (see [CUSTOMIZE.md](CUSTOMIZE.md) → *Weather, calendar & alarms*).
 
+## Using it as a Bluetooth speaker
+
+The LineageOS port for this device enables the Bluetooth **A2DP sink**, so the Echo can act as a
+**Bluetooth speaker** for your phone, tablet or computer — at the same time as it shows the clock.
+
+1. **Make it pairable.** On the device: tap the clock → app drawer → **Settings** →
+   *Connected devices* → **Pair new device** (that screen makes it discoverable). From a
+   computer you can jump straight there:
+   ```sh
+   adb shell am start -a android.settings.BLUETOOTH_SETTINGS
+   ```
+2. **Pair from your phone.** It appears as **Echo Show 5**; pair it and play something.
+
+Audio comes out of the Echo's speaker. Use your phone's volume, or the Echo's **volume keys**
+(remember the mute button is the *power* button on this port). There's no media UI — the phone
+is the remote — and the clock keeps running while music plays.
+
 ## Troubleshooting
 
 **“Where's the camera?”**
