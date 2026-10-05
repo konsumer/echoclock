@@ -1,0 +1,16 @@
+{
+  "id": "lava-agenda",
+  "name": "Lava Agenda",
+  "author": "echoclock",
+  "description": "Lava-lamp background with the agenda: time, next alarm, weather and upcoming events.",
+  "settings": [
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false },
+    { "key": "showSeconds", "label": "Seconds", "type": "bool", "default": false },
+    { "key": "showDate", "label": "Date", "type": "bool", "default": true },
+    { "key": "maxEvents", "label": "Events shown", "type": "int", "min": 1, "max": 8, "default": 5 },
+    { "key": "showAlarm", "label": "Next alarm", "type": "bool", "default": true },
+    { "key": "showWeather", "label": "Weather", "type": "bool", "default": true },
+    { "key": "tempUnit", "label": "Temperature unit", "type": "enum", "options": ["F", "C"], "default": "F" },
+    { "key": "motion", "label": "Lava motion", "type": "enum", "options": ["Calm", "Normal", "Lively"], "default": "Normal" }
+  ]
+}

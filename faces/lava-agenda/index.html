@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Lava Agenda</title>
+<style>
+  html,body{margin:0;width:960px;height:480px;overflow:hidden;background:#0a0612;color:#eef6ff;
+    font-family:"Helvetica Neue",Roboto,Arial,sans-serif;user-select:none;-webkit-user-select:none;cursor:none;}
+  /* lava background, exactly as the bundled `lava` face draws it */
+  canvas{position:fixed;inset:0;width:960px;height:480px;filter:blur(16px) saturate(1.5);}
+  /* scrim: just enough to keep text legible; keep the lava vivid */
+  #scrim{position:fixed;inset:0;
+    background:linear-gradient(90deg,rgba(4,5,9,.46) 0%,rgba(4,5,9,.18) 45%,rgba(4,5,9,.34) 100%);}
+  #wrap{position:fixed;inset:0;display:flex;text-shadow:0 2px 18px rgba(0,0,0,.85);}
+  #left{width:410px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
+    padding:0 26px;box-sizing:border-box;gap:6px;}
+  #time{font-size:132px;font-weight:200;line-height:1;font-variant-numeric:tabular-nums;}
+  #time.sec{font-size:92px;}
+  #sec{color:#ffd0ec;}
+  #date{font-size:22px;letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.72);}
+  #extra{display:flex;flex-direction:column;gap:4px;font-size:22px;color:rgba(255,255,255,.82);margin-top:8px;
+    max-width:358px;}
+  #extra>div{display:none;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  #extra>div.on{display:block;}
+  #rule{width:1px;background:rgba(255,255,255,.22);margin:26px 0;}
+  #right{flex:1;display:flex;flex-direction:column;padding:22px 26px 22px 10px;box-sizing:border-box;}
+  #heading{font-size:17px;letter-spacing:.34em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:10px;}
+  #events{flex:1;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+  .row{display:flex;align-items:baseline;gap:14px;border-left:3px solid #4fd6ff;padding:6px 0 6px 12px;
+    background:rgba(4,6,10,.45);border-radius:0 10px 10px 0;}
+  .row.soon{border-left-color:#ffcf3f;}
+  .et{width:88px;font-size:22px;color:rgba(255,255,255,.85);font-variant-numeric:tabular-nums;flex:none;}
+  .etitle{flex:1;font-size:28px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .erel{font-size:20px;color:rgba(255,255,255,.6);flex:none;padding-right:10px;}
+  #empty{color:rgba(255,255,255,.45);font-size:24px;margin-top:8px;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="scrim"></div>
+<div id="wrap">
+  <div id="left">
+    <div id="time">--:--</div>
+    <div id="date"></div>
+    <div id="extra">
+      <div id="iAlarm"></div>
+      <div id="iWeather"></div>
+    </div>
+  </div>
+  <div id="rule"></div>
+  <div id="right">
+    <div id="heading">Upcoming</div>
+    <div id="events"></div>
+    <div id="empty">No upcoming events</div>
+  </div>
+</div>
+<script>
+(function(){
+  var cfg={},st={};
+
+  function ps(v){if(v==null)return {};if(typeof v==='string'){try{return JSON.parse(v)||{};}catch(e){return {};}}return v;}
+  function pad(n){return (n<10?'0':'')+n;}
+  function is24(){return (cfg.format24h===true)||(cfg.hour12===false);}
+  function clockH(h){h=h%12;if(h===0)h=12;return h;}
+  function hhmm(ms){
+    var d=new Date(ms);
+    if(is24())return pad(d.getHours())+':'+pad(d.getMinutes());
+    return clockH(d.getHours())+':'+pad(d.getMinutes())+(d.getHours()<12?'am':'pm');
+  }
+  function inText(mins){
+    var m=Math.round(mins);
+    if(m<=0)return 'now';
+    if(m<60)return 'in '+m+'m';
+    var h=Math.floor(m/60),r=m%60;
+    return 'in '+h+'h'+(r?(' '+r+'m'):'');
+  }
+  function evLine(ev){
+    if(!ev||typeof ev!=='object')return null;
+    var when=ev.allDay?'All day':hhmm(ev.begin);
+    var rel=(typeof ev.inMinutes==='number'&&!ev.allDay)?inText(ev.inMinutes):'';
+    return {when:when,title:(typeof ev.title==='string'&&ev.title)?ev.title:'Event',rel:rel,soon:rel==='now'};
+  }
+  function renderEvents(list){
+    var box=document.getElementById('events');
+    var sig=JSON.stringify(list.map(function(e){return e.when+'|'+e.title+'|'+e.rel;}));
+    if(box._sig===sig)return;
+    box._sig=sig;
+    box.innerHTML='';
+    for(var i=0;i<list.length;i++){
+      var row=document.createElement('div');
+      row.className='row'+(list[i].soon?' soon':'');
+      var et=document.createElement('div');et.className='et';et.textContent=list[i].when;
+      var tt=document.createElement('div');tt.className='etitle';tt.textContent=list[i].title;
+      var rl=document.createElement('div');rl.className='erel';rl.textContent=list[i].rel;
+      row.appendChild(et);row.appendChild(tt);row.appendChild(rl);
+      box.appendChild(row);
+    }
+    document.getElementById('empty').style.display=list.length?'none':'block';
+  }
+  function setLine(id,txt){
+    var el=document.getElementById(id);
+    if(!el)return;
+    var s=(typeof txt==='string')?txt:'';
+    el.textContent=s;
+    el.className=s?'on':'';
+  }
+
+  // ---- data (same rules as the bundled `agenda` face) --------------------------
+  function render(){
+    var t=(typeof st.epoch==='number')?st.epoch:Date.now();
+    var d=new Date(t);
+    var te=document.getElementById('time');
+    var h=d.getHours();
+    if(!is24())h=clockH(h);
+    if(cfg.showSeconds===true){
+      te.className='sec';
+      te.innerHTML=pad(h)+':'+pad(d.getMinutes())+'<span id="sec">:'+pad(d.getSeconds())+'</span>';
+    }else{
+      te.className='';
+      te.textContent=pad(h)+':'+pad(d.getMinutes());
+    }
+    var de=document.getElementById('date');
+    if(cfg.showDate===false){de.textContent='';}
+    else{
+      var loc=typeof st.locale==='string'?st.locale:undefined;
+      try{de.textContent=new Intl.DateTimeFormat(loc,{weekday:'long',month:'long',day:'numeric'}).format(d);}
+      catch(e){try{de.textContent=d.toDateString();}catch(e2){de.textContent='';}}
+    }
+    var alarm=(st&&st.nextAlarm&&typeof st.nextAlarm==='object')?st.nextAlarm:null;
+    setLine('iAlarm',(cfg.showAlarm!==false&&alarm&&typeof alarm.epoch==='number')?('Alarm '+hhmm(alarm.epoch)):'');
+    var w=(st&&st.weather&&typeof st.weather==='object')?st.weather:null;
+    var wt='';
+    if(cfg.showWeather!==false&&w){
+      // Unit is a per-face setting (default °F); the app supplies both tempC and tempF.
+      var u=(cfg.tempUnit==='C')?'C':'F';
+      var temp=(u==='F')?(typeof w.tempF==='number'?w.tempF:w.tempC):(typeof w.tempC==='number'?w.tempC:w.tempF);
+      if(typeof temp==='number')wt=Math.round(temp)+'\u00b0'+u+' '+(w.text||'')+(w.stale===true?' (stale)':'');
+    }
+    setLine('iWeather',wt);
+    var cal=(st&&st.calendar instanceof Array)?st.calendar:[];
+    var max=(typeof cfg.maxEvents==='number'&&cfg.maxEvents>0)?Math.min(8,cfg.maxEvents):5;
+    var lines=[];
+    for(var i=0;i<cal.length&&lines.length<max;i++){
+      var line=evLine(cal[i]);
+      if(line)lines.push(line);
+    }
+    renderEvents(lines);
+  }
+
+  // ---- lava background (same animation as the bundled `lava` face) -------------
+  function motionFactor(){
+    var m=String(cfg.motion||'normal').toLowerCase();
+    return m==='calm'?0.5:(m==='lively'?1.6:1);
+  }
+  var c=document.getElementById('c');
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  c.width=960*dpr;c.height=480*dpr;
+  var ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+  var COLORS=[[255,80,160],[255,150,60],[120,90,255],[80,220,255],[255,60,120],[180,80,255],[255,200,80]];
+  var blobs=[],W=960,H=480;
+  for(var i=0;i<7;i++){
+    blobs.push({bx:Math.random()*W,by:Math.random()*H,r:130+Math.random()*130,
+      ax:90+Math.random()*90,ay:70+Math.random()*80,sx:0.08+Math.random()*0.16,sy:0.06+Math.random()*0.14,
+      ph:Math.random()*Math.PI*2,c:COLORS[i%COLORS.length]});
+  }
+  function frame(){
+    var t=((window.performance&&performance.now)?performance.now():Date.now())/1000;
+    ctx.globalCompositeOperation='source-over';
+    var bg=ctx.createLinearGradient(0,0,0,H);
+    bg.addColorStop(0,'#120726');bg.addColorStop(1,'#050208');
+    ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation='lighter';
+    var mult=motionFactor();
+    for(var i=0;i<blobs.length;i++){
+      var b=blobs[i];
+      var x=(b.bx+Math.sin(t*b.sx*Math.PI*2*mult+b.ph)*b.ax+W)%W;
+      var y=(b.by+Math.cos(t*b.sy*Math.PI*2*mult+b.ph)*b.ay+H)%H;
+      var g=ctx.createRadialGradient(x,y,0,x,y,b.r);
+      g.addColorStop(0,'rgba('+b.c[0]+','+b.c[1]+','+b.c[2]+',0.55)');
+      g.addColorStop(1,'rgba('+b.c[0]+','+b.c[1]+','+b.c[2]+',0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,b.r,0,Math.PI*2);ctx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  window.ec={
+    config:function(x){cfg=ps(x);render();},
+    tick:function(s){st=ps(s);render();},
+    event:function(n,p){if(p&&typeof p==='object'&&typeof p.epoch==='number')window.ec.tick(p);}
+  };
+
+  render();
+  setInterval(render,1000);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

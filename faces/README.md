@@ -5,6 +5,12 @@ Drop any additional clock faces in this directory and
 `/sdcard/EchoClock/faces/` on the device. The ten bundled faces ship inside the APK, so you only
 need this folder for faces you want the installer to push — add `faces/<id>/` yourself.
 
+**Included example:** `lava-agenda/` — the bundled `lava` background with the bundled `agenda`
+data (time, next alarm, weather, upcoming events) on top. It ships here rather than in the APK,
+so `install/provision.sh` is what puts it on a device.
+
+![lava-agenda](../docs/screenshots/lava-agenda.png)
+
 A face is a directory containing:
 
 ```
