@@ -84,21 +84,18 @@ fi
 printf 'sdk.dir=%s\n' "${SDK//\\/\\\\}" > "$APP_DIR/local.properties"
 
 # ---- signing keystore --------------------------------------------------------
-KEYSTORE="$APP_DIR/keystore.jks"
-if [ ! -f "$KEYSTORE" ]; then
-    if command -v keytool >/dev/null 2>&1; then
-        echo "==> creating signing keystore: $KEYSTORE"
-        if ! keytool -genkeypair \
-            -keystore "$KEYSTORE" \
-            -alias echoclock -storepass android -keypass android \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=EchoClock, OU=EchoClock, O=EchoClock, C=US" >/dev/null 2>&1; then
-            echo "$PROG: warning: keytool failed; Gradle will fall back to the debug signing key." >&2
-            rm -f "$KEYSTORE"
-        fi
-    else
-        echo "$PROG: warning: keytool not found; Gradle will fall back to the debug signing key." >&2
-    fi
+# app/release.keystore is committed on purpose (self-signed, password "android"), so local and
+# CI builds sign identically and APKs upgrade over each other. Do NOT generate a throwaway key:
+# a different key per machine/run breaks in-place upgrades. Override with ECHOCLOCK_KEYSTORE_FILE.
+if [ -n "${ECHOCLOCK_KEYSTORE_FILE:-}" ]; then
+    echo "==> signing key: $ECHOCLOCK_KEYSTORE_FILE (from ECHOCLOCK_KEYSTORE_FILE)"
+elif [ -f "$APP_DIR/release.keystore" ]; then
+    echo "==> signing key: $APP_DIR/release.keystore (committed)"
+elif [ -f "$APP_DIR/keystore.jks" ]; then
+    echo "==> signing key: $APP_DIR/keystore.jks (local)"
+else
+    echo "$PROG: warning: no keystore found; Gradle will fall back to the debug signing key," >&2
+    echo "         so this APK will NOT upgrade over a release-signed install." >&2
 fi
 
 # ---- build -------------------------------------------------------------------

@@ -88,6 +88,9 @@ LICENSE    MIT
   secrets on it.
 - **Battery always reads 100%** and **deep sleep is disabled** — it's a wall-powered panel.
 - Only the optional weather and any calendar account you sign in yourself use the network.
+- APKs are signed with a **self-signed key committed in the repo** (`app/release.keystore`), so
+  releases install as upgrades of each other. It's an identity, not a secret — swap in your own
+  key (repo secrets) if you fork.
 
 ## Credits / prior art
 

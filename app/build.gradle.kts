@@ -3,16 +3,24 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
-// Release signing. Local builds use app/keystore.jks with the historical "android"
-// passwords (build.sh creates it); CI overrides via env vars (see
-// .github/workflows/release.yml): ECHOCLOCK_KEYSTORE_FILE, ECHOCLOCK_KEYSTORE_PASSWORD,
-// ECHOCLOCK_KEY_ALIAS, ECHOCLOCK_KEY_PASSWORD. Gradle properties of the same names are
-// accepted as a fallback. A missing keystore falls back to the debug signing key.
-val keystoreFile = file(
-    providers.environmentVariable("ECHOCLOCK_KEYSTORE_FILE").orNull
+// Release signing.
+//
+// The repo ships a self-signed key, `app/release.keystore` (alias/store/key password all
+// "android" — it is deliberately NOT a secret), so every build from every machine and from CI
+// signs identically and APKs upgrade cleanly over each other. It is only "identity", not
+// security: anyone with the repo could sign an APK your device accepts as an update of
+// EchoClock. Replace it if you fork and want your own identity.
+//
+// Overrides, highest first: env vars (ECHOCLOCK_KEYSTORE_FILE / _PASSWORD / _ALIAS / _KEY_PASSWORD,
+// as set from repo secrets in .github/workflows/release.yml), then gradle properties of the same
+// names, then a legacy local app/keystore.jks. With none present we fall back to the debug key
+// (installable, but not upgradeable over a release-signed install).
+val keystoreFile = run {
+    val explicit = providers.environmentVariable("ECHOCLOCK_KEYSTORE_FILE").orNull
         ?: providers.gradleProperty("echoclockKeystoreFile").orNull
-        ?: "keystore.jks"
-)
+    val candidates = listOfNotNull(explicit, "release.keystore", "keystore.jks")
+    file(candidates.firstOrNull { file(it).exists() } ?: candidates.first())
+}
 val keystorePassword = providers.environmentVariable("ECHOCLOCK_KEYSTORE_PASSWORD").orNull
     ?: providers.gradleProperty("echoclockStorePassword").orNull
     ?: "android"
