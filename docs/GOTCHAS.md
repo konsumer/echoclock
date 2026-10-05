@@ -45,6 +45,31 @@ ourselves. Read before flashing.
 - **`GET_EVENT` buffering**: `getevent` full-buffers to a pipe, so shell "volume-button" monitors
   never see individual presses. Not used here, but explains why that trick fails on this device.
 
+## Audio: never run `dumpsys media.audio_flinger` on this device
+
+The ported vendor audio HAL (`/vendor/bin/hw/android.hardware.audio.service`, built from
+`android.hardware.audio@2.0-impl.so` — the `amazon_wrapper` HAL) has a **null-pointer
+dereference in `Device::debug()`**:
+
+```
+signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0  (null pointer dereference)
+#01 .../android.hardware.audio@2.0-impl.so
+    (Device::debug(hidl_handle const&, hidl_vec<hidl_string> const&)+46)
+```
+
+`dumpsys media.audio_flinger` invokes that `debug()` method, so **running it crashes the HAL**.
+Reproduced twice on hardware: the HAL pid changed and a fresh tombstone appeared on each run.
+init restarts the service, but the speaker output stays **silent until reboot** — Android still
+reports everything healthy (music unmuted, volume 15/15, `OUT_SPEAKER`, master mute off,
+`underruns=0 writeErrors=0`), which is why it looks like "audio-out just stopped working".
+
+- **Do not run** `dumpsys media.audio_flinger` (and don't have tooling do it).
+  `dumpsys audio` and `dumpsys media.audio_policy` are safe.
+- **If audio goes silent:** `adb shell logcat -b crash -d | grep -i audio.service` — if you see
+  that signature, **reboot**; more dumpsys will only crash it again.
+- The HAL is crash-prone generally (several distinct pids in the crash buffer from one boot),
+  so this is an upstream bug in the port worth reporting to the XDA thread with the stack above.
+
 ## Building
 
 - **Use the Gradle wrapper.** `bash app/build.sh` runs `./gradlew --no-daemon assembleRelease`

@@ -51,6 +51,10 @@ adb logcat -s EchoClock               # the app's log tag
 
 Don't run the device as part of a code change unless asked; the owner tests on hardware.
 
+**Never run `dumpsys media.audio_flinger` on the device** — the ported vendor audio HAL
+null-derefs in `Device::debug()` and the speaker goes silent until reboot (see
+`docs/GOTCHAS.md` → *Audio*). `dumpsys audio` / `dumpsys media.audio_policy` are fine.
+
 **Trigger an action without touching the UI** (external action trigger, `DESIGN §7.3`). Prefix
 `adb` with `-s <serial>` (or `export ANDROID_SERIAL=<serial>`) when more than one device is
 attached — otherwise adb errors with `more than one device/emulator`; `adb devices -l` shows
