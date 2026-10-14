@@ -55,7 +55,9 @@ Does (idempotently):
                                 settings put secure user_setup_complete 1
   * kiosk display               locksettings set-disabled true; screensaver/doze
                                 off; screen_off_timeout 1800000;
-                                stay_on_while_plugged_in 7; 'cmd uimode night yes'
+                                stay_on_while_plugged_in 7; 'cmd uimode night yes';
+                                wm size reset; wm density $DISPLAY_DENSITY (faces are
+                                960x480 CSS px, 1:1 only at mdpi)
   * installs                    app/out/$APK_NAME ${BUNDLED_APKS:+(and: $BUNDLED_APKS)}
   * pushes                      config/config.json -> $DEVICE_APP_DIR/config.json
                                 faces/<id>/  -> $DEVICE_APP_DIR/faces/
@@ -132,6 +134,9 @@ adb_shell settings put secure doze_enabled 0
 adb_shell settings put system screen_off_timeout 1800000
 adb_shell settings put global stay_on_while_plugged_in 7
 adb_shell cmd uimode night yes
+# faces are 960x480 CSS px: that only fills the screen 1:1 at mdpi (160 dpi)
+adb_shell wm size reset
+adb_shell wm density "$DISPLAY_DENSITY"
 
 # ---------------------------------------------------------------------------
 # 2. install APKs

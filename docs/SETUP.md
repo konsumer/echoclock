@@ -191,7 +191,8 @@ An error like `INSTALL_FAILED_NO_MATCHING_ABIS` means you have an arm64 build: E
 It does, in order:
 
 - **setup wizard skipped** and **kiosk display settings**: `locksettings set-disabled true`,
-  screensaver/doze off, `screen_off_timeout 1800000`, `stay_on_while_plugged_in 7`, night mode;
+  screensaver/doze off, `screen_off_timeout 1800000`, `stay_on_while_plugged_in 7`, night mode,
+  `wm density 160` (faces are 960×480 CSS px, which fits 1:1 only at mdpi);
 - **installs** EchoClock (and any `BUNDLED_APKS`);
 - **pushes app data**: `config/config.json` and any extra `faces/*` into `/sdcard/EchoClock/`;
 - **sets the launcher** to EchoClock: `cmd package set-home-activity org.echoclock/.HomeActivity`;
