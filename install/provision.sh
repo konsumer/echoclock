@@ -97,6 +97,17 @@ info "EchoClock provisioning — repo: $ROOT"
 ensure_platform_tools
 need_cmd adb "install platform-tools or set ANDROID_HOME"
 
+if ! adb_devices | grep -q .; then
+  if command -v fastboot >/dev/null 2>&1 && fastboot_devices | grep -q .; then
+    die "the device is in fastboot, not a booted Android system
+     provision.sh is the LAST step and only works over adb, after LineageOS boots.
+     Unlock and flash first: ./install/flash-lineageos.sh
+     Then boot LineageOS, enable USB debugging, and re-run this script."
+  fi
+  die "no adb device in 'device' state. Enable USB debugging, replug, accept the RSA prompt, then check: adb devices
+     If the device is in fastboot, unlock/flash it first: ./install/flash-lineageos.sh"
+fi
+
 SERIAL=$(adb_dev)
 assert_device_identity "$SERIAL"
 

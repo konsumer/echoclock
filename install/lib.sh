@@ -140,6 +140,85 @@ adb_devices() {
   adb devices | awk 'NR > 1 && $2 == "device" { print $1 }'
 }
 
+# fastboot_devices — serials of devices in fastboot, one per line.
+fastboot_devices() {
+  fastboot devices 2>/dev/null | awk 'NF >= 2 && $2 == "fastboot" { print $1 }'
+}
+
+# ec_timeout SECONDS CMD... — run CMD with a deadline. Prefers GNU timeout,
+# falls back to gtimeout (Homebrew coreutils) and finally to a kill wrapper.
+ec_timeout() {
+  local secs=$1 pid watcher rc=0
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+    return $?
+  fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+    return $?
+  fi
+  "$@" & pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) & watcher=$!
+  wait "$pid" 2>/dev/null || rc=$?
+  kill -TERM "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  return "$rc"
+}
+
+# fastboot_getvar SERIAL VAR [TIMEOUT] — value of a fastboot variable, empty on
+# timeout/failure. Fastboot prints variables on stderr, so capture both streams.
+fastboot_getvar() {
+  local serial=$1 var=$2 timeout=${3:-10}
+  { ec_timeout "$timeout" fastboot -s "$serial" getvar "$var" 2>&1 || true; } \
+    | tr -d '\r' \
+    | sed -n "s/^${var}:[[:space:]]*//p" \
+    | sed -n '1p'
+}
+
+# fastboot_dev — validate exactly one fastboot device and that its product is the
+# configured codename. Prints the serial on stdout. All diagnostics go to stderr.
+fastboot_dev() {
+  need_cmd fastboot "install platform-tools or set ANDROID_HOME"
+  local devices count serial product
+  devices=$(fastboot_devices)
+  count=$(printf '%s\n' "$devices" | grep -c . || true)
+
+  if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+    case " $devices " in
+      *" $ANDROID_SERIAL "*) serial=$ANDROID_SERIAL ;;
+      *) die "ANDROID_SERIAL=$ANDROID_SERIAL is not an attached fastboot device (attached: $(printf '%s ' $devices))" ;;
+    esac
+  elif [[ "$count" -eq 1 ]]; then
+    serial=$(printf '%s\n' "$devices" | sed -n '1p')
+  elif [[ "$count" -eq 0 ]]; then
+    die "no fastboot device. Power the device off, then hold all three buttons (Volume Down + Volume Up + Mute) until '=> FASTBOOT mode...' appears; connect USB and retry"
+  else
+    die "multiple fastboot devices attached: $(printf '%s ' $devices) — unplug the extras or set ANDROID_SERIAL=<serial>"
+  fi
+
+  product=$(fastboot_getvar "$serial" product 10)
+  if [[ -z "$product" ]]; then
+    die "fastboot at $serial did not answer 'getvar product' within 10s
+     The device is in fastboot but the protocol is dead. Do not keep retrying in place:
+     power-cycle it (hold power ~10s), re-enter '=> FASTBOOT mode...', and retry.
+     amonet's XDA instructions support Windows and Linux only; macOS's USB stack can
+     wedge this device. A Linux host (Raspberry Pi or a VM with USB passthrough) is the
+     reliable fallback."
+  fi
+
+  if [[ "$(printf '%s' "$product" | tr 'A-Z' 'a-z')" != "$(printf '%s' "${CODENAME:-cronos}" | tr 'A-Z' 'a-z')" ]]; then
+    if [[ "${ALLOW_UNKNOWN_DEVICE:-0}" == 1 ]]; then
+      warn "fastboot reports product='$product' (expected '${CODENAME:-cronos}') — ALLOW_UNKNOWN_DEVICE=1, continuing"
+    else
+      die "fastboot device $serial reports product='$product', not '${CODENAME:-cronos}' — refusing (set ALLOW_UNKNOWN_DEVICE=1 to override at your own risk)"
+    fi
+  else
+    ok "fastboot device $serial is ${CODENAME:-cronos}"
+  fi
+  printf '%s\n' "$serial"
+}
+
 # ec_set_serial SERIAL — validate and export ANDROID_SERIAL so every later adb call
 # targets exactly this device (needed when several are attached).
 ec_set_serial() {

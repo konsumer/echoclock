@@ -74,7 +74,8 @@ is the remote — and the clock keeps running while music plays.
 
 **“Where's the camera?”**
 It works. Open the **app drawer** (tap the clock) and tap **Camera**. The camera needs GApps
-installed (it is, if you followed [SETUP.md](SETUP.md)) and the `com.android.camera2` app.
+installed (it is, if you followed [install/README.md](../install/README.md)) and the
+`com.android.camera2` app.
 
 **“The battery always shows 100%.”**
 By design — the battery reporting on this modified ROM is not real. It's meant to live plugged
@@ -97,8 +98,8 @@ device's `EchoClock` folder.
 
 ---
 
-New here? The full story of how the device was built is in [SETUP.md](SETUP.md); the
-two-page overview is [README.md](../README.md).
+New here? The installation guide is [install/README.md](../install/README.md); the short
+target/safety page is [SETUP.md](SETUP.md); the overview is [README.md](../README.md).
 
 ---
 

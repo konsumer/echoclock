@@ -42,19 +42,19 @@ Usage: ./install/flash-lineageos.sh [options]
 Options:
   -n, --dry-run     print the plan and exit; touch nothing
   -y, --yes         auto-confirm prompts (non-interactive; ASSUME_YES=1 also works)
-  -s, --serial S    target exactly this adb serial (USB serial or host:port); required
-                    when more than one device is attached
+  -s, --serial S    target exactly this adb/fastboot serial (USB serial or host:port);
+                    required when more than one device is attached
       --skip-unlock use when the device is already unlocked / already in TWRP
       --sideload    flash with 'adb sideload' instead of pushing zips to /sdcard
   -h, --help        show this help
 
 Steps:
   1. sanity-check adb/fastboot and install/dl/$AMONET_FILE
-  2. refusal-safe identity check: ro.product.device + ro.product.name == $CODENAME
-     and ro.boot.hardware == mt8163
-  3. unlock: extract the amonet bundle, swap any Linux-ELF fastboot/adb for the
-     host ones (macOS), run fastbrick.sh interactively (loud anti-rollback warning,
-     typed YES required)
+  2. refusal-safe identity check: fastboot product == $CODENAME before unlock
+     (or ro.product.device/name + ro.boot.hardware when already in TWRP)
+  3. unlock: extract the amonet bundle, run fastbrick.sh interactively (loud
+     anti-rollback warning, typed YES required). Put the device in fastboot first:
+     power off, hold Volume Down + Volume Up + Mute until '=> FASTBOOT mode...'
   4. TWRP: 'twrp wipe system/cache/dalvik', 'twrp format data', then push the zips
      (or 'twrp sideload' + 'adb sideload'), verify sha256 ON DEVICE, 'twrp install'
      the ROM then GApps, 'twrp reboot'
@@ -64,6 +64,9 @@ Notes:
   * 'twrp format data' erases internal storage, so the zips are pushed AFTER the
     wipes (or streamed with adb sideload) — never lost mid-flash.
   * This script never flashes preloader/lk/tee.
+  * amonet is supported on Windows and Linux. macOS works for provisioning after
+    LineageOS boots, but its USB stack can wedge fastbrick; use a Linux host if it
+    does.
   * First boot after flashing takes 5-10 minutes; then enable USB debugging and
     run ./install/provision.sh.
 
@@ -216,11 +219,19 @@ done
 SERIAL=""
 STAGE=""
 CAND=""
+FB_CAND=""
 if command -v adb >/dev/null 2>&1; then
   if [[ -n "${ANDROID_SERIAL:-}" ]]; then
     CAND="$ANDROID_SERIAL"
   else
     CAND=$(twrp_candidates | sed -n '1p')
+  fi
+fi
+if command -v fastboot >/dev/null 2>&1; then
+  if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+    FB_CAND=$(fastboot_devices | grep -x "$ANDROID_SERIAL" | sed -n '1p' || true)
+  else
+    FB_CAND=$(fastboot_devices | sed -n '1p')
   fi
 fi
 
@@ -247,12 +258,20 @@ if [[ "$STAGE" == unlock ]]; then
      Save it under that exact name and re-run."
   fi
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    SERIAL=$(adb_dev)
-    assert_device_identity "$SERIAL"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      warn "amonet's XDA instructions cover Windows and Linux only; macOS is unsupported"
+      warn "if fastbrick stalls, use a Linux host (Raspberry Pi or a VM with USB passthrough)"
+    fi
+    SERIAL=$(fastboot_dev)
+    if [[ -n "$CAND" ]]; then
+      info "adb is also reachable at $CAND (fine; unlock still runs over fastboot)"
+    fi
+  elif [[ -n "$FB_CAND" ]]; then
+    info "fastboot device $FB_CAND present — identity would be checked with 'fastboot getvar product'"
   elif [[ -n "$CAND" ]]; then
-    info "device $CAND present — identity would be checked (ro.product.device/name == $CODENAME, ro.boot.hardware == mt8163)"
+    warn "adb device $CAND present but not in fastboot — amonet needs '=> FASTBOOT mode...'"
   else
-    warn "no adb device attached (plan only)"
+    warn "no fastboot device attached (plan only)"
   fi
 fi
 
@@ -283,7 +302,8 @@ fi
 if [[ "$DRY_RUN" -eq 1 ]]; then
   info "[dry-run] no changes made. Would run:"
   if [[ "$STAGE" == unlock ]]; then
-    info "  unzip $AMONET_ZIP -> temp dir; substitute host fastboot/adb if bundle ships Linux ELF"
+    info "  unzip $AMONET_ZIP -> temp dir; keep bundled fastboot if it runs on this host"
+    info "  (substitute host fastboot/adb only if the bundle ships Linux ELF binaries)"
     info "  (cd <temp>/... && bash ./fastbrick.sh)   # interactive, typed YES"
     info "  wait for TWRP over adb"
   fi
@@ -315,27 +335,46 @@ if [[ "$STAGE" == unlock ]]; then
   FASTBRICK=$(find "$TMP" -maxdepth 3 -type f -name fastbrick.sh -print 2>/dev/null | sed -n '1p')
   [[ -n "$FASTBRICK" ]] || die "fastbrick.sh not found inside $AMONET_FILE — is this the right bundle?"
 
-  # The bundle ships Linux binaries; substitute the host ones on macOS.
-  for tool in fastboot adb; do
-    f="$TMP/bin/$tool"
-    [[ -f "$f" ]] || continue
-    if [[ "$(uname -s)" == "Darwin" ]] && file "$f" 2>/dev/null | grep -qi 'ELF'; then
+  # The bundle nests its tools under amonet/bin (older bundles used bin/).
+  # Keep the bundled fastboot when it runs on this host; only replace Linux ELF
+  # binaries on macOS.
+  while IFS= read -r f; do
+    [[ -n "$f" && -f "$f" ]] || continue
+    if [[ "$(uname -s)" == "Darwin" ]] && file -b "$f" 2>/dev/null | grep -qi 'ELF'; then
+      tool=$(basename "$f")
       host_tool=$(command -v "$tool" || true)
       [[ -n "$host_tool" ]] || die "bundle ships a Linux $tool and no host $tool was found on PATH"
-      warn "bundle bin/$tool is a Linux ELF — substituting host $tool for macOS"
+      warn "bundle $tool is a Linux ELF — substituting host $tool for macOS"
       cp -f "$host_tool" "$f"
       chmod +x "$f"
     fi
-  done
-  if [[ -d "$TMP/bin" ]]; then
-    chmod +x "$TMP/bin"/* 2>/dev/null || true
-  fi
+  done < <(find "$TMP" -maxdepth 4 -type f \( -name fastboot -o -name adb \) -path '*/bin/*' -print 2>/dev/null)
+  find "$TMP" -maxdepth 5 -type f \( -name fastboot -o -name fastboot32 -o -name adb \) \
+    -exec chmod +x {} + 2>/dev/null || true
   chmod +x "$FASTBRICK"
 
+  # fastbrick.sh calls 'timeout 8'; native macOS has no timeout. Make Homebrew's
+  # gtimeout visible as 'timeout' for the bundle's subprocesses.
+  if ! type -P timeout >/dev/null 2>&1; then
+    if type -P gtimeout >/dev/null 2>&1; then
+      SHIM=$(mktemp -d "${TMPDIR:-/tmp}/echoclock-timeout.XXXXXX")
+      TMP_DIRS="$TMP_DIRS $SHIM"
+      printf '#!/bin/sh\nexec gtimeout "$@"\n' > "$SHIM/timeout"
+      chmod +x "$SHIM/timeout"
+      PATH="$SHIM:$PATH"
+      export PATH
+      info "no 'timeout' on PATH — using gtimeout for fastbrick.sh"
+    else
+      die "fastbrick.sh needs GNU timeout. Install coreutils (macOS: brew install coreutils) and retry"
+    fi
+  fi
+
   info "running amonet fastbrick.sh interactively from $(dirname "$FASTBRICK")"
+  info "put the device in '=> FASTBOOT mode...' before it starts waiting"
   ( cd "$(dirname "$FASTBRICK")" && bash ./fastbrick.sh )
 
   info "unlock finished — waiting up to 10 min for TWRP over adb"
+  info "the exploit can take several minutes after fastbrick.sh returns; do not unplug"
   SERIAL=$(wait_for_twrp 600 || true)
   if [[ -z "$SERIAL" ]]; then
     warn "TWRP did not show up over adb"

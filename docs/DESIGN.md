@@ -13,20 +13,21 @@ the MT8163 is 64-bit-capable. Screen is **960x480 landscape**, ~1 GB RAM.
 
 ```
 echoclock/
-  README.md                 landing page (what it is, the four parts)
+  README.md                 landing page (what it is + start links)
   AGENTS.md                 guide for AI coding agents
   docs/
-    SETUP.md                blank device -> LineageOS + GApps + EchoClock
+    SETUP.md                target, host support, brick warnings (steps link to install/README.md)
     USAGE.md                living with a ready device
     CUSTOMIZE.md            faces, settings, external triggers (how-to)
     DESIGN.md               this file
     DEVICE.md               hardware/firmware facts + sources
     GOTCHAS.md              traps learned (from prior art + our testing)
   install/
+    README.md               phase-by-phase install guide (stock, TWRP, LineageOS, upgrades)
     config.env              versions, URLs, sha256 (single source of truth)
     lib.sh                  shared bash helpers (colors, die, need, adb wrappers)
     download.sh             fetch ROM + GApps (+ build the APK when a JDK/SDK is present)
-    setup.sh                one shot: download -> flash -> provision per device
+    setup.sh                wrapper: download -> flash (provision after first boot)
     flash-lineageos.sh      unlock (amonet) + TWRP + ROM + GApps, guided
     provision.sh            post-first-boot: skip wizard, kiosk settings, install apps
   app/
@@ -242,7 +243,7 @@ version). `install/download.sh` fetches everything into `install/dl/` and verifi
 Flow:
 1. `./install/download.sh` — everything including EchoClock.apk (build if missing).
 2. `./install/flash-lineageos.sh` — guided:
-   - sanity-check `adb`/`fastboot`, device codename `cronos`;
+   - check `fastboot getvar product` == `cronos` before unlock (or TWRP identity props);
    - run amonet `fastbrick` (unlock) — interactive, warns loudly;
    - boot TWRP, `twrp wipe` + `twrp install` ROM, then GApps;
    - reboot.

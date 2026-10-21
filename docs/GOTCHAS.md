@@ -8,11 +8,14 @@ ourselves. Read before flashing.
 - **Wrong codename = bootloop.** `checkers` (Show 5 gen 1) and `cronos` (gen 2) need different
   amonet packages. Verify with `getprop ro.product.device` == `cronos` before anything.
 - **Anti-rollback is permanent.** Never flash old `preloader`/`lk`/`tee`.
-- **The bundled `bin/fastboot` in amonet is a Linux ELF.** On macOS, overwrite it with a real
-  macOS `fastboot` (`brew install android-platform-tools`) before running `fastbrick.sh`.
-  `fastbrick.sh` also needs GNU `timeout` (Homebrew coreutils) on macOS.
-- **The exploit can stall on macOS's USB stack.** Try another cable/port; a Linux host (a Pi is
-  plenty) usually works first try if macOS won't.
+- **amonet is Windows/Linux-only.** The v2.0.1 bundle includes a Mach-O `bin/fastboot`, but
+  macOS is not a supported host: `fastboot getvar` can hang while `fastboot devices` still
+  lists the Echo, and `fastbrick` then stalls. Use a Linux host (a Raspberry Pi or a VM with
+  USB passthrough) or Windows for the unlock. `flash-lineageos.sh` refuses to proceed when
+  fastboot does not answer within 10 s instead of hanging.
+- **`provision.sh` is not the unlock tool.** It only speaks adb and assumes LineageOS is
+  already booted. A device sitting in `=> FASTBOOT mode...` or in TWRP must go through
+  `flash-lineageos.sh` first.
 - **Format Data wipes internal storage**, so you cannot `adb push` the ROM zip and *then* format.
   Either push after the wipe and use `twrp install`, or use `adb sideload` from TWRP.
 - **Don't improvise wipes.** The ROM thread's exact order (Format Data → Advanced Wipe

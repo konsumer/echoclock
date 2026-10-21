@@ -60,15 +60,17 @@ gated), so it cannot be auto-downloaded — place it in `install/dl/`:
 - Thread: https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-show-5-2nd-gen-2021-cronos.4772596/
 - File: `amonet-cronos-v2.0.1.zip` (current release at time of writing)
 
-The bundle ships cross-platform `fastbrick.sh` / `.bat` / `.ps1`, `backup.*`, `restore.*`,
-`boot-fastboot.*`, `boot-recovery.*`, and `bin/` (payload blobs + firmware images). It also
-installs **TWRP**.
+The bundle ships `fastbrick.sh` (Linux), `.bat` / `.ps1` (Windows), `backup.*`,
+`restore.*`, `boot-fastboot.*`, `boot-recovery.*`, and `bin/` (payload blobs + firmware
+images). macOS is **not** a supported host for the unlock, even though a Mach-O
+`bin/fastboot` is included. It also installs **TWRP**.
 
 ### Safety
 
 - **Anti-rollback is a permanent fuse.** Never flash a `preloader` / `lk` / `tee` older than
-  what is installed — that is an unrecoverable brick. `fastbrick` version-matches the firmware
-  image automatically; confirm it prints "Fire OS 6.5.7.0 or newer" on an updated unit.
+  what is installed — that is an unrecoverable brick. Before unlocking a stock unit, confirm
+  Fire OS 6.5.7.0 or newer in Settings; `fastbrick` prints the detected LK build and selected
+  payload, and aborts on “Device mismatch”.
 - The device **lacks BROM USBDL** access in the normal case, so bricks can be permanent.
 - The exploit intentionally corrupts a partition to force BROM ("fastbrick") — the screen
   going black/garbled is normal. Do not unplug.
