@@ -1,0 +1,17 @@
+{
+  "id": "arcade",
+  "name": "Arcade",
+  "author": "echoclock",
+  "description": "Retro arcade face: pixel time, a dot-muncher lane that eats one dot per second, and four ninja turtles on a night street.",
+  "settings": [
+    { "key": "format24h", "label": "24-hour clock", "type": "bool", "default": false },
+    { "key": "showSeconds", "label": "Seconds", "type": "bool", "default": true },
+    { "key": "showDate", "label": "Date", "type": "bool", "default": true },
+    { "key": "showAlarm", "label": "Next alarm", "type": "bool", "default": true },
+    { "key": "showEvent", "label": "Next event", "type": "bool", "default": true },
+    { "key": "showWeather", "label": "Weather", "type": "bool", "default": true },
+    { "key": "tempUnit", "label": "Temperature unit", "type": "enum", "options": ["F", "C"], "default": "F" },
+    { "key": "animated", "label": "Animate sprites", "type": "bool", "default": true },
+    { "key": "scanlines", "label": "CRT scanlines", "type": "bool", "default": true }
+  ]
+}
