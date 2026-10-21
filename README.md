@@ -16,8 +16,8 @@ No account, no cloud — nothing leaves the device.
 
 ## What you get
 
-- **Ten bundled clock faces** — `agenda`, `analog`, `binary`, `cute`, `digital`, `flip`,
-  `gallop`, `lava`, `pomodoro`, `world` — swiped left/right. A face is just an `index.html` +
+- **Eleven bundled clock faces** — `agenda`, `analog`, `binary`, `cute`, `digital`, `flip`,
+  `gallop`, `lava`, `pomodoro`, `world`, `arcade` — swiped left/right. A face is just an `index.html` +
   `face.json` directory, so you can write your own and drop it in
   ([faces/README.md](faces/README.md)).
 - **Per-face settings** — long-press the clock; the native sheet is generated from the face's

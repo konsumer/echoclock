@@ -162,7 +162,7 @@ Native JS methods (`window.EC`; JSON payloads come back as strings, boolean meth
 | `refresh()` | `true` (re-request calendar + weather now, never blocks) |
 
 Bundled faces (assets/faces/): `digital`, `flip`, `analog`, `lava`, `pomodoro`, `gallop`,
-`world`, `binary`, `cute`, `agenda`. They must run with **no network** and degrade gracefully.
+`world`, `binary`, `cute`, `agenda`, `arcade`. They must run with **no network** and degrade gracefully.
 
 ### 2.5 App drawer
 

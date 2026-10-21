@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Arcade</title>
+<style>
+  html, body { margin: 0; width: 960px; height: 480px; overflow: hidden; background: #000; cursor: none;
+    user-select: none; -webkit-user-select: none; }
+  canvas { position: fixed; left: 0; top: 0; width: 960px; height: 480px; image-rendering: pixelated; }
+  #scan { position: fixed; left: 0; top: 0; width: 960px; height: 480px; pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, .3) 2px, rgba(0, 0, 0, .3) 3px); }
+</style>
+</head>
+<body>
+<canvas id="bg" width="960" height="480"></canvas>
+<canvas id="fg" width="960" height="480"></canvas>
+<div id="scan"></div>
+<script>
+(function () {
+  'use strict'
+
+  var W = 960
+  var DEFAULTS = {
+    format24h: false,
+    showSeconds: true,
+    showDate: true,
+    showAlarm: true,
+    showEvent: true,
+    showWeather: true,
+    tempUnit: 'F',
+    animated: true,
+    scanlines: true
+  }
+  var cfg = {}
+  var st = {}
+  var offset = 0 // device epoch minus Date.now(), so animation follows the app's clock
+  var timer = null
+
+  var bg = document.getElementById('bg').getContext('2d')
+  var fg = document.getElementById('fg').getContext('2d')
+
+  function ps (v) {
+    if (v == null) return {}
+    if (typeof v === 'string') {
+      try { return JSON.parse(v) || {} } catch (e) { return {} }
+    }
+    return v
+  }
+  function opt (k) { return (cfg && cfg[k] !== undefined && cfg[k] !== null) ? cfg[k] : DEFAULTS[k] }
+  function pad (n) { return (n < 10 ? '0' : '') + n }
+  function now () { return Date.now() + offset }
+
+  var DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+  var MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+  // ---- 5x7 pixel font (each row is 5 bits, MSB = left column) -------------------
+  var FONT = {
+    '0': [14, 17, 17, 17, 17, 17, 14], '1': [4, 12, 4, 4, 4, 4, 14], '2': [14, 17, 1, 2, 4, 8, 31],
+    '3': [31, 2, 4, 2, 1, 17, 14], '4': [2, 6, 10, 18, 31, 2, 2], '5': [31, 16, 30, 1, 1, 17, 14],
+    '6': [6, 8, 16, 30, 17, 17, 14], '7': [31, 1, 2, 4, 8, 8, 8], '8': [14, 17, 17, 14, 17, 17, 14],
+    '9': [14, 17, 17, 15, 1, 2, 12],
+    A: [14, 17, 17, 31, 17, 17, 17], B: [30, 17, 17, 30, 17, 17, 30], C: [14, 17, 16, 16, 16, 17, 14],
+    D: [28, 18, 17, 17, 17, 18, 28], E: [31, 16, 16, 30, 16, 16, 31], F: [31, 16, 16, 30, 16, 16, 16],
+    G: [14, 17, 16, 23, 17, 17, 15], H: [17, 17, 17, 31, 17, 17, 17], I: [14, 4, 4, 4, 4, 4, 14],
+    J: [7, 2, 2, 2, 2, 18, 12], K: [17, 18, 20, 24, 20, 18, 17], L: [16, 16, 16, 16, 16, 16, 31],
+    M: [17, 27, 21, 21, 17, 17, 17], N: [17, 17, 25, 21, 19, 17, 17], O: [14, 17, 17, 17, 17, 17, 14],
+    P: [30, 17, 17, 30, 16, 16, 16], Q: [14, 17, 17, 17, 21, 18, 13], R: [30, 17, 17, 30, 20, 18, 17],
+    S: [15, 16, 16, 14, 1, 1, 30], T: [31, 4, 4, 4, 4, 4, 4], U: [17, 17, 17, 17, 17, 17, 14],
+    V: [17, 17, 17, 17, 17, 10, 4], W: [17, 17, 17, 21, 21, 21, 10], X: [17, 17, 10, 4, 10, 17, 17],
+    Y: [17, 17, 10, 4, 4, 4, 4], Z: [31, 1, 2, 4, 8, 16, 31],
+    ':': [0, 12, 12, 0, 12, 12, 0], '.': [0, 0, 0, 0, 0, 12, 12], ',': [0, 0, 0, 0, 12, 4, 8],
+    '-': [0, 0, 0, 31, 0, 0, 0], '!': [4, 4, 4, 4, 4, 0, 4], '?': [14, 17, 1, 2, 4, 0, 4],
+    '/': [1, 1, 2, 4, 8, 16, 16], "'": [4, 4, 8, 0, 0, 0, 0], '&': [12, 18, 20, 8, 21, 18, 13],
+    '+': [0, 4, 4, 31, 4, 4, 0], '(': [2, 4, 8, 8, 8, 4, 2], ')': [8, 4, 2, 2, 2, 4, 8],
+    '#': [10, 10, 31, 10, 31, 10, 10], '%': [24, 25, 2, 4, 8, 19, 3], '=': [0, 0, 31, 0, 31, 0, 0],
+    '_': [0, 0, 0, 0, 0, 0, 31], '@': [14, 17, 23, 21, 23, 16, 14]
+  }
+  var NARROW = ":.,'!()"
+  var TRIM = {}
+  ;(function () {
+    for (var i = 0; i < NARROW.length; i++) {
+      var ch = NARROW[i]
+      var g = FONT[ch]
+      var lo = 5
+      var hi = -1
+      for (var c = 0; c < 5; c++) {
+        for (var r = 0; r < 7; r++) {
+          if (g[r] & (16 >> c)) { lo = Math.min(lo, c); hi = Math.max(hi, c) }
+        }
+      }
+      TRIM[ch] = { lo: lo, w: hi - lo + 1 }
+    }
+  })()
+
+  function norm (s) {
+    // fold accents so most Latin titles still render in the pixel font
+    s = String(s == null ? '' : s)
+    try { s = s.normalize('NFD').replace(/[̀-ͯ]/g, '') } catch (e) {}
+    return s.toUpperCase()
+  }
+  function adv (ch) {
+    if (TRIM[ch]) return TRIM[ch].w + 1
+    return FONT[ch] ? 6 : 4
+  }
+  function textWidth (s, sc) {
+    s = norm(s)
+    if (!s.length) return 0
+    var w = 0
+    for (var i = 0; i < s.length; i++) w += adv(s[i])
+    return (w - 1) * sc
+  }
+  // color: a CSS color, or an array of 7 colors (one per glyph row) for a gradient
+  function drawText (ctx, s, x, y, sc, color, gap) {
+    s = norm(s)
+    var g = gap || 0
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i]
+      var rows = FONT[ch]
+      if (rows) {
+        var lo = TRIM[ch] ? TRIM[ch].lo : 0
+        for (var r = 0; r < 7; r++) {
+          if (!rows[r]) continue
+          ctx.fillStyle = (typeof color === 'string') ? color : color[r]
+          for (var c = 0; c < 5; c++) {
+            if (rows[r] & (16 >> c)) ctx.fillRect(x + (c - lo) * sc, y + r * sc, sc - g, sc - g)
+          }
+        }
+      }
+      x += adv(ch) * sc
+    }
+    return x
+  }
+  function drawTextShadow (ctx, s, x, y, sc, color, shadow, off, gap) {
+    drawText(ctx, s, x + off, y + off, sc, shadow, gap)
+    return drawText(ctx, s, x, y, sc, color, gap)
+  }
+  function centerText (ctx, s, cx, y, sc, color) {
+    drawText(ctx, s, Math.round(cx - textWidth(s, sc) / 2), y, sc, color)
+  }
+  // fit a string into maxW pixels at scale sc, adding "..." when cut
+  function fit (s, sc, maxW) {
+    s = norm(s)
+    if (textWidth(s, sc) <= maxW) return s
+    while (s.length > 1 && textWidth(s + '...', sc) > maxW) s = s.slice(0, -1)
+    return s.replace(/\s+$/, '') + '...'
+  }
+
+  // ---- sprites ------------------------------------------------------------------
+  function drawSprite (ctx, rows, pal, x, y, sc) {
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r]
+      for (var c = 0; c < row.length; c++) {
+        var col = pal[row[c]]
+        if (!col) continue
+        ctx.fillStyle = col
+        ctx.fillRect(x + c * sc, y + r * sc, sc, sc)
+      }
+    }
+  }
+
+  // dot-muncher: 13x13 pixel disc with a wedge mouth
+  function drawPac (ctx, cx, cy, dir, mouth) {
+    var sc = 3
+    var n = 13
+    var r = 6.5
+    var x0 = Math.round(cx - n * sc / 2)
+    var y0 = Math.round(cy - n * sc / 2)
+    ctx.fillStyle = '#ffff00'
+    for (var j = 0; j < n; j++) {
+      for (var i = 0; i < n; i++) {
+        var dx = i + 0.5 - r
+        var dy = j + 0.5 - r
+        if (dx * dx + dy * dy > r * r) continue
+        if (Math.abs(Math.atan2(dy, dx * dir)) < mouth && dx * dx + dy * dy > 1) continue
+        ctx.fillRect(x0 + i * sc, y0 + j * sc, sc, sc)
+      }
+    }
+  }
+
+  var GHOST_TOP = [
+    '.....####.....',
+    '...########...',
+    '..##########..',
+    '.############.',
+    '.############.',
+    '.############.',
+    '##############',
+    '##############',
+    '##############',
+    '##############',
+    '##############',
+    '##############'
+  ]
+  var GHOST_FEET = [
+    ['##.###..###.##', '#...##..##...#'],
+    ['####.####.####', '.##...##...##.']
+  ]
+  var EYE = ['.##.', '####', '####', '####', '.##.']
+  function drawGhost (ctx, cx, cy, color, dir, mode, frame, flash) {
+    var sc = 3
+    var x0 = Math.round(cx - 21)
+    var y0 = Math.round(cy - 21)
+    if (mode !== 'eyes') {
+      var body = mode === 'scared' ? (flash ? '#ffffff' : '#2121ff') : color
+      var rows = GHOST_TOP.concat(GHOST_FEET[frame])
+      drawSprite(ctx, rows, { '#': body }, x0, y0, sc)
+    }
+    if (mode === 'scared') {
+      ctx.fillStyle = flash ? '#ff0000' : '#ffb897'
+      ctx.fillRect(x0 + 4 * sc, y0 + 5 * sc, 2 * sc, 2 * sc)
+      ctx.fillRect(x0 + 8 * sc, y0 + 5 * sc, 2 * sc, 2 * sc)
+      for (var c = 2; c < 12; c++) ctx.fillRect(x0 + c * sc, y0 + (c % 2 ? 9 : 10) * sc, sc, sc)
+      return
+    }
+    var ex = dir > 0 ? 1 : -1
+    for (var e = 0; e < 2; e++) {
+      var wx = 2 + e * 6 + ex
+      drawSprite(ctx, EYE, { '#': '#ffffff' }, x0 + wx * sc, y0 + 3 * sc, sc)
+      ctx.fillStyle = '#2121ff'
+      ctx.fillRect(x0 + (wx + (dir > 0 ? 2 : 0)) * sc, y0 + 5 * sc, 2 * sc, 2 * sc)
+    }
+  }
+
+  // ninja turtle, 16x20, facing right. m = mask colour, 2 walk frames (legs differ)
+  var TURTLE_TOP = [
+    '......kkkkk.....',
+    '.....kgggggk....',
+    '....kgggggggk...',
+    '..mkmmmmmmmmmk..',
+    '.m.kmmmmmwkmwk..',
+    'm..kgggggggggk..',
+    '....kgggggkkgk..',
+    '....kkgggggkk...',
+    '...kssskgggk....',
+    '..ksssskyyyk....',
+    '..ksssskyyykgk..',
+    '.kssssskyyykggk.',
+    '.kssssskyyyk.gk.',
+    '.kssssbbbbbk.gk.',
+    '..ksskggggk..k..',
+    '...kkgggggk.....'
+  ]
+  var TURTLE_LEGS = [
+    ['...kggk.kggk....', '...kggk.kggk....', '..kbbk...kbbk...', '..kkk.....kkk...'],
+    ['...kggk..kggk...', '..kggk....kggk..', '.kbbk......kbbk.', '.kkk........kkk.']
+  ]
+  var TURTLE_PAL = {
+    k: '#0c1a0c', g: '#45b545', s: '#8a5a2a', y: '#e0c860', b: '#6a3a1a', w: '#ffffff'
+  }
+  var TURTLES = [
+    { mask: '#2a6bff', weapon: 'katana' },
+    { mask: '#ff2a2a', weapon: 'sai' },
+    { mask: '#ff8a1a', weapon: 'nunchaku' },
+    { mask: '#a040ff', weapon: 'bo' }
+  ]
+  var WEAPONS = {
+    // [col, row, colour] in sprite cells, relative to the sprite origin (hand is at 13,13)
+    katana: [[14, 13, 'b'], [15, 12, 'x'], [16, 11, 'x'], [17, 10, 'x'], [18, 9, 'x'], [19, 8, 'x'], [20, 7, 'x']],
+    sai: [[14, 13, 'b'], [15, 13, 'x'], [16, 13, 'x'], [17, 13, 'x'], [18, 13, 'x'], [15, 12, 'x'], [15, 14, 'x']],
+    nunchaku: [
+      [[14, 12, 'n'], [14, 13, 'n'], [14, 14, 'n'], [15, 15, 'x'], [16, 16, 'n'], [17, 16, 'n'], [18, 16, 'n']],
+      [[14, 12, 'n'], [14, 13, 'n'], [14, 14, 'n'], [15, 11, 'x'], [16, 10, 'n'], [17, 9, 'n'], [18, 8, 'n']]
+    ],
+    bo: []
+  }
+  for (var bo = 1; bo < 20; bo++) WEAPONS.bo.push([14, bo, 'n'])
+  var WEAPON_PAL = { b: '#6a3a1a', x: '#d8e0f0', n: '#b07a3a' }
+
+  function drawTurtle (ctx, t, x, y, frame) {
+    var sc = 3
+    var pal = {}
+    for (var k in TURTLE_PAL) pal[k] = TURTLE_PAL[k]
+    pal.m = t.mask
+    var w = WEAPONS[t.weapon]
+    if (t.weapon === 'nunchaku') w = w[frame]
+    if (t.weapon === 'bo') paintCells(ctx, w, x, y, sc) // staff sits behind the arm
+    drawSprite(ctx, TURTLE_TOP.concat(TURTLE_LEGS[frame]), pal, x, y, sc)
+    if (t.weapon !== 'bo') paintCells(ctx, w, x, y, sc)
+  }
+  function paintCells (ctx, cells, x, y, sc) {
+    for (var i = 0; i < cells.length; i++) {
+      ctx.fillStyle = WEAPON_PAL[cells[i][2]]
+      ctx.fillRect(x + cells[i][0] * sc, y + cells[i][1] * sc, sc, sc)
+    }
+  }
+
+  // ---- static night skyline (built once) ----------------------------------------
+  var sky = document.createElement('canvas')
+  sky.width = W
+  sky.height = 140
+  ;(function () {
+    var c = sky.getContext('2d')
+    var seed = 1987
+    function rnd () { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff }
+    for (var s = 0; s < 40; s++) {
+      c.fillStyle = rnd() < 0.3 ? '#8888aa' : '#44445a'
+      c.fillRect(Math.floor(rnd() * W), Math.floor(rnd() * 40), 2, 2)
+    }
+    var x = -10
+    while (x < W) {
+      var bw = 40 + Math.floor(rnd() * 50)
+      var bh = 34 + Math.floor(rnd() * 56)
+      var top = 96 - bh
+      c.fillStyle = rnd() < 0.5 ? '#1c1236' : '#24184a'
+      c.fillRect(x, top, bw, 96 - top)
+      if (rnd() < 0.25) { // rooftop water tower
+        c.fillStyle = '#1c1236'
+        c.fillRect(x + 8, top - 14, 14, 10)
+        c.fillRect(x + 10, top - 4, 2, 4)
+        c.fillRect(x + 18, top - 4, 2, 4)
+      }
+      for (var wy = top + 6; wy < 88; wy += 12) {
+        for (var wx = x + 6; wx < x + bw - 8; wx += 10) {
+          var p = rnd()
+          if (p < 0.35) continue
+          c.fillStyle = p < 0.55 ? '#ffd84a' : '#3a2e5a'
+          c.fillRect(wx, wy, 4, 6)
+        }
+      }
+      x += bw + 2 + Math.floor(rnd() * 6)
+    }
+    // sidewalk, curb, road
+    c.fillStyle = '#4a4a5e'
+    c.fillRect(0, 96, W, 12)
+    c.fillStyle = '#34344a'
+    for (var sx = 20; sx < W; sx += 40) c.fillRect(sx, 96, 2, 12)
+    c.fillStyle = '#8a8aa0'
+    c.fillRect(0, 108, W, 4)
+    c.fillStyle = '#1c1c26'
+    c.fillRect(0, 112, W, 28)
+    c.fillStyle = '#b89a2a'
+    for (var lx = 10; lx < W; lx += 64) c.fillRect(lx, 132, 24, 3)
+    c.fillStyle = '#0c0c12' // manhole
+    c.fillRect(690, 118, 44, 6)
+    c.fillRect(696, 116, 32, 10)
+  })()
+  var SKY_Y = 340
+
+  // ---- layout -------------------------------------------------------------------
+  var LANE_Y = 310
+  var TIME_Y = 72
+  var TIME_SC = 20
+  var GRAD = ['#fff6a0', '#ffe94d', '#ffd21a', '#ffad00', '#ff8600', '#ff5a00', '#e83a00']
+  var RED = '#ff2b2b'
+
+  function is24 () { return opt('format24h') === true }
+  function hm (h, m) {
+    if (is24()) return pad(h) + ':' + pad(m)
+    var h12 = h % 12 || 12
+    return h12 + ':' + pad(m) + (h < 12 ? ' AM' : ' PM')
+  }
+  function inText (mins) {
+    var m = Math.max(0, Math.round(mins))
+    if (m < 1) return 'NOW'
+    if (m < 60) return 'IN ' + m + 'M'
+    var h = Math.floor(m / 60)
+    var r = m % 60
+    return 'IN ' + h + 'H' + (r ? ' ' + r + 'M' : '')
+  }
+  function wxWord (code, text) {
+    if (typeof code !== 'number') return text ? norm(text).split(' ')[0] : ''
+    if (code === 0) return 'CLEAR'
+    if (code <= 2) return 'PARTLY'
+    if (code === 3) return 'CLOUDY'
+    if (code === 45 || code === 48) return 'FOG'
+    if (code >= 51 && code <= 57) return 'DRIZZLE'
+    if (code >= 61 && code <= 67) return 'RAIN'
+    if (code >= 71 && code <= 77) return 'SNOW'
+    if (code >= 80 && code <= 82) return 'SHOWERS'
+    if (code === 85 || code === 86) return 'SNOW'
+    if (code >= 95) return 'STORM'
+    return ''
+  }
+  // earliest timed event; all-day only when nothing timed remains
+  function pickNextEvent (cal) {
+    if (!(cal instanceof Array)) return null
+    var timed = null
+    var allDay = null
+    for (var i = 0; i < cal.length; i++) {
+      var e = cal[i]
+      if (!e) continue
+      if (e.allDay === true) { if (!allDay) allDay = e } else if (!timed) timed = e
+    }
+    return timed || allDay
+  }
+
+  function alarmInfo () {
+    var al = (st && st.nextAlarm && typeof st.nextAlarm === 'object') ? st.nextAlarm : null
+    if (!al || typeof al.epoch !== 'number') return null
+    var m = /^(\d{1,2}):(\d{2})$/.exec(String(al.time || ''))
+    var d = new Date(al.epoch)
+    var txt = m ? hm(+m[1], +m[2]) : hm(d.getHours(), d.getMinutes())
+    if (typeof al.dayOffset === 'number' && al.dayOffset > 0) txt += ' ' + DAYS[d.getDay()]
+    return { text: txt, soon: typeof al.inMinutes === 'number' && al.inMinutes <= 60 }
+  }
+
+  function eventLine () {
+    if (opt('showEvent') === false) return null
+    var ev = pickNextEvent(st.calendar)
+    if (!ev) return { none: true }
+    var title = (typeof ev.title === 'string' && ev.title.trim()) ? ev.title.trim() : 'Untitled'
+    var when = ''
+    if (ev.allDay === true) {
+      var bd = new Date(ev.begin)
+      when = (typeof ev.begin === 'number' && bd.toDateString() !== new Date(now()).toDateString())
+        ? DAYS[bd.getDay()] : 'TODAY'
+    } else if (typeof ev.inMinutes === 'number' && ev.inMinutes < 720) {
+      when = inText(ev.inMinutes)
+    } else if (typeof ev.begin === 'number') {
+      var b = new Date(ev.begin)
+      when = DAYS[b.getDay()] + ' ' + hm(b.getHours(), b.getMinutes())
+    }
+    return { title: title, when: when }
+  }
+
+  // ---- background layer: HUD, big time, maze walls, skyline (once per second) ----
+  function drawBg () {
+    var t = now()
+    var d = new Date(t)
+    bg.fillStyle = '#000'
+    bg.fillRect(0, 0, W, 480)
+
+    // HUD
+    if (opt('showAlarm') !== false) {
+      var al = alarmInfo()
+      if (al) centerText(bg, al.text, 160, 38, 3, '#ffffff')
+    }
+    if (opt('showDate') !== false) {
+      centerText(bg, 'DATE', 480, 10, 3, RED)
+      centerText(bg, DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate(), 480, 38, 3, '#ffffff')
+    }
+    var w = (st && st.weather && typeof st.weather === 'object') ? st.weather : null
+    if (opt('showWeather') !== false && w) {
+      var c = opt('tempUnit') === 'C'
+      var tv = c ? w.tempC : w.tempF
+      if (typeof tv === 'number') {
+        centerText(bg, 'WEATHER', 800, 10, 3, RED)
+        var word = wxWord(w.code, w.text)
+        centerText(bg, Math.round(tv) + (c ? 'C' : 'F') + (word ? ' ' + word : ''), 800, 38, 3, '#ffffff')
+      }
+    }
+
+    // big time
+    var h = d.getHours()
+    var main = (is24() ? pad(h) : String(h % 12 || 12)) + ':' + pad(d.getMinutes())
+    var mainW = textWidth(main, TIME_SC)
+    var showSec = opt('showSeconds') !== false
+    var ampm = is24() ? '' : (h < 12 ? 'AM' : 'PM')
+    var side = Math.max(showSec ? textWidth('00', 8) : 0, ampm ? textWidth(ampm, 6) : 0)
+    var x0 = Math.round((W - mainW - (side ? side + 28 : 0)) / 2)
+    drawTextShadow(bg, main, x0, TIME_Y, TIME_SC, GRAD, '#5a1400', 6, 2)
+    var sx = x0 + mainW + 28
+    if (ampm) drawTextShadow(bg, ampm, sx, TIME_Y, 6, RED, '#4a0000', 3, 1)
+    if (showSec) drawTextShadow(bg, pad(d.getSeconds()), sx, TIME_Y + 7 * TIME_SC - 56, 8, '#7af4ff', '#003a4a', 4, 1)
+
+    // next event (the "no event" blinker lives on the fg layer)
+    var ev = eventLine()
+    if (ev && !ev.none) {
+      var pre = 'NEXT '
+      var post = ev.when ? ' ' + ev.when : ''
+      var title = fit(ev.title, 3, 920 - textWidth(pre + post, 3))
+      var tw = textWidth(pre + title + post, 3)
+      var ex = Math.round((W - tw) / 2)
+      ex = drawText(bg, pre, ex, 236, 3, '#00ffff')
+      ex = drawText(bg, title, ex, 236, 3, '#ffffff')
+      drawText(bg, post, ex, 236, 3, '#ffd21a')
+    }
+
+    // maze corridor
+    bg.fillStyle = '#2121ff'
+    bg.fillRect(0, 276, W, 3)
+    bg.fillRect(0, 284, W, 3)
+    bg.fillRect(0, 334, W, 3)
+    bg.fillRect(0, 342, W, 3)
+
+    bg.drawImage(sky, 0, SKY_Y)
+  }
+
+  // ---- foreground layer: sprites (every frame) -----------------------------------
+  // Ghost start positions when the chase flips; each is caught when the muncher reaches it.
+  var GHOSTS = ['#ff0000', '#ffb8ff', '#00ffff', '#ffb852']
+  var GHOST_GAP = 46
+  var GHOST_LEAD = 70
+  var FLEE = 12 // px/s while frightened (muncher runs 16 px/s)
+  var POINTS = ['200', '400', '800', '1600']
+
+  function drawLane (t, ms) {
+    var d = new Date(t)
+    var s = d.getSeconds() + ms / 1000
+    var chase = d.getMinutes() % 2 === 0 // even minute: ghosts chase right; odd: muncher hunts left
+    var mouth = Math.abs(Math.sin(t / 1000 * Math.PI * 4)) * 0.8
+    var frame = Math.floor(t / 160) % 2
+    var px = chase ? 16 * s : W - 16 * s
+
+    for (var k = 0; k < 60; k++) {
+      var dx = 8 + 16 * k
+      if (chase ? dx < px : dx > px) continue
+      if (chase && k === 59) {
+        if (Math.floor(t / 250) % 2) drawSprite(fg, ['.##.', '####', '####', '.##.'], { '#': '#ffb8ae' }, dx - 6, LANE_Y - 6, 3)
+      } else {
+        fg.fillStyle = '#ffb8ae'
+        fg.fillRect(dx - 2, LANE_Y - 2, 4, 4)
+      }
+    }
+
+    var popup = false
+    for (var i = 0; i < 4; i++) {
+      if (chase) {
+        drawGhost(fg, px - GHOST_LEAD - GHOST_GAP * i, LANE_Y, GHOSTS[i], 1, 'normal', frame, false)
+        continue
+      }
+      var a = W - GHOST_LEAD - GHOST_GAP * i
+      var caught = (W - a) / (16 - FLEE)
+      if (s < caught) {
+        var flash = caught - s < 2.5 && Math.floor(t / 200) % 2 === 0
+        drawGhost(fg, a - FLEE * s, LANE_Y, GHOSTS[i], -1, 'scared', frame, flash)
+      } else {
+        var cx = W - 16 * caught
+        var since = s - caught
+        if (since < 1) {
+          centerText(fg, POINTS[i], cx, LANE_Y - 7, 2, '#00ffff')
+          popup = true
+        } else {
+          drawGhost(fg, cx + (since - 1) * 120, LANE_Y, GHOSTS[i], 1, 'eyes', frame, false)
+        }
+      }
+    }
+    if (!popup) drawPac(fg, px, LANE_Y, chase ? 1 : -1, mouth) // hidden while a score shows
+  }
+
+  function drawStreet (t) {
+    var d = new Date(t)
+    var lead = ((t / 1000 * 40) % 1300) - 60
+    var feet = SKY_Y + 128
+    for (var i = 0; i < TURTLES.length; i++) {
+      var f = (Math.floor(t / 180) + i) % 2
+      drawTurtle(fg, TURTLES[i], Math.round(lead - i * 64), feet - 60 - f * 3, f)
+    }
+    if (d.getMinutes() === 0 && d.getSeconds() < 10 && lead > 0 && lead < W - 140) {
+      var msg = 'COWABUNGA!'
+      var bw = textWidth(msg, 2) + 16
+      var bx = Math.round(lead + 20)
+      var by = feet - 60 - 40
+      fg.fillStyle = '#ffffff'
+      fg.fillRect(bx, by, bw, 26)
+      fg.fillRect(bx + 6, by + 26, 6, 6)
+      drawText(fg, msg, bx + 8, by + 6, 2, '#000000')
+    }
+  }
+
+  function drawFg () {
+    var t = now()
+    var ms = new Date(t).getMilliseconds()
+    if (opt('animated') === false) { // frozen: sprites hold still, dots still count seconds
+      t -= ms
+      ms = 0
+    }
+    fg.clearRect(0, 0, W, 480)
+    var blink = Math.floor(t / 500) % 2 === 0
+    if (opt('showAlarm') !== false) {
+      var al = alarmInfo()
+      if (al && (!al.soon || blink)) centerText(fg, al.soon ? '1UP ALARM' : 'ALARM', 160, 10, 3, RED)
+    }
+    var ev = eventLine()
+    if (ev && ev.none && blink) centerText(fg, 'INSERT COIN', 480, 236, 3, '#ffd21a')
+    drawLane(t, ms)
+    drawStreet(t)
+  }
+
+  function restart () {
+    if (timer) { clearInterval(timer); timer = null }
+    if (opt('animated') !== false) timer = setInterval(drawFg, 66)
+    document.getElementById('scan').style.display = opt('scanlines') === false ? 'none' : ''
+    drawBg()
+    drawFg()
+  }
+
+  window.ec = {
+    config: function (c) { cfg = ps(c); restart() },
+    tick: function (s) {
+      st = ps(s)
+      if (typeof st.epoch === 'number') offset = st.epoch - Date.now()
+      drawBg()
+      if (opt('animated') === false) drawFg()
+    }
+  }
+  restart()
+})()
+</script>
+</body>
+</html>
