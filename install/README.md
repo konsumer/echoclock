@@ -370,12 +370,26 @@ HOME:
 Idempotent and non-destructive, except that it overwrites `/sdcard/EchoClock/config.json`
 with the repo copy. Back up first if you edited it on the device.
 
-### E2. Factory-reset Android, keep LineageOS
+### E2. Factory-reset a stock Echo without Settings
 
-Settings → System → Reset options → **Erase all data**. Or in TWRP, `twrp format data`.
-This erases `/sdcard/EchoClock/`. Boot LineageOS, enable USB debugging, then run Phase C3.
+If the Echo is still on Fire OS and you cannot reach Settings:
 
-### E3. Start completely clean
+1. Leave it powered on and connected to the charger.
+2. Hold **Mute (Microphones & Camera Disable/Enable) + Volume Down** for about 15 seconds,
+   until the Amazon logo appears.
+3. Release and follow the on-screen reset/setup prompts.
+
+This erases the device. If you plan to sell or give it away, also deregister it in the Alexa
+app. This is a stock-Fire-OS path only. On an unlocked `cronos`, **Mute + Volume Down at
+power-on is USBDL**, not recovery — use TWRP instead (next section).
+
+### E3. Factory-reset LineageOS without Settings
+
+Boot TWRP (**Volume Up only** while connecting power), then Wipe → **Format Data**. Or use
+Settings → System → Reset options → **Erase all data**. This erases `/sdcard/EchoClock/`.
+Boot LineageOS, enable USB debugging, then run Phase C3.
+
+### E4. Start completely clean
 
 Flash LineageOS again with Phase B, then provision. The flasher's `format data` and wipes
 remove the app, its config, and all internal storage.
