@@ -24,11 +24,13 @@ echoclock/
     GOTCHAS.md              traps learned (from prior art + our testing)
   install/
     README.md               phase-by-phase install guide (stock, TWRP, LineageOS, upgrades)
+    MACOS.md                macOS unlock details (pyusb client, fallbacks, recovery)
+    fbflash.py              pyusb fastboot client for the oversized amonet payload
     config.env              versions, URLs, sha256 (single source of truth)
     lib.sh                  shared bash helpers (colors, die, need, adb wrappers)
     download.sh             fetch ROM + GApps (+ build the APK when a JDK/SDK is present)
-    setup.sh                wrapper: download -> flash (provision after first boot)
-    flash-lineageos.sh      unlock (amonet) + TWRP + ROM + GApps, guided
+    setup.sh                wrapper: download -> flash (waits for boot) -> provision
+    flash-lineageos.sh      unlock (amonet/pyusb) + TWRP + ROM + GApps, guided
     provision.sh            post-first-boot: skip wizard, kiosk settings, install apps
   app/
     build.sh                wrapper -> ./gradlew assembleRelease -> out/EchoClock.apk
@@ -244,9 +246,10 @@ Flow:
 1. `./install/download.sh` — everything including EchoClock.apk (build if missing).
 2. `./install/flash-lineageos.sh` — guided:
    - check `fastboot getvar product` == `cronos` before unlock (or TWRP identity props);
-   - run amonet `fastbrick` (unlock) — interactive, warns loudly;
+   - run amonet `fastbrick` (unlock) — interactive, warns loudly; macOS uses
+     `install/fbflash.py` (pyusb) for the same payload;
    - boot TWRP, `twrp wipe` + `twrp install` ROM, then GApps;
-   - reboot.
+   - reboot with `twrp reboot system`.
 3. First boot (5–10 min) → enable USB debugging.
 4. `./install/provision.sh` — skip setup wizard, debloat, kiosk display settings,
    `adb install` EchoClock + bundled apps, push `config.json` + faces,

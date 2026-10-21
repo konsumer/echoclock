@@ -8,14 +8,25 @@ ourselves. Read before flashing.
 - **Wrong codename = bootloop.** `checkers` (Show 5 gen 1) and `cronos` (gen 2) need different
   amonet packages. Verify with `getprop ro.product.device` == `cronos` before anything.
 - **Anti-rollback is permanent.** Never flash old `preloader`/`lk`/`tee`.
-- **amonet is Windows/Linux-only.** The v2.0.1 bundle includes a Mach-O `bin/fastboot`, but
-  macOS is not a supported host: `fastboot getvar` can hang while `fastboot devices` still
-  lists the Echo, and `fastbrick` then stalls. Use a Linux host (a Raspberry Pi or a VM with
-  USB passthrough) or Windows for the unlock. `flash-lineageos.sh` refuses to proceed when
-  fastboot does not answer within 10 s instead of hanging.
+- **Stock fastboot cannot do the unlock.** v2.0.1 ships a **patched Linux ELF**
+  `bin/fastboot` (and a Windows `.exe`); those work on Linux/Windows. macOS instead uses
+  this repo's [`install/fbflash.py`](../install/fbflash.py), a pyusb client that sends the
+  image with a hexadecimal `download:` size. Stock platform-tools fastboot 37 fails with
+  `Could not resparse file for partition: brick`; versions 28/33 send a sparse image and
+  the device replies `FAILED (remote: 'the command you input is restricted on locked hw')`.
+  On Linux/Windows, using the wrong binary makes `fastbrick.sh` loop forever at
+  `Sending payload, this might take a few attempts...` because it only treats a timeout
+  (exit 124) as success. `flash-lineageos.sh --fastboot /path/to/fastboot` forces a
+  patched binary.
 - **`provision.sh` is not the unlock tool.** It only speaks adb and assumes LineageOS is
   already booted. A device sitting in `=> FASTBOOT mode...` or in TWRP must go through
   `flash-lineageos.sh` first.
+- **TWRP's `sha256sum` hashes a directory as the empty-string hash**
+  (`e3b0c442...`). Always verify the file path, never `/sdcard/` or another directory. The
+  installer derives remote filenames with bash `${path##*/}` and refuses an empty basename.
+- **`twrp reboot` needs a target.** Use `twrp reboot system`; bare `reboot` may print
+  “there is no value” and leave the device in recovery. If it stays in TWRP, run
+  `adb shell twrp reboot system`.
 - **Format Data wipes internal storage**, so you cannot `adb push` the ROM zip and *then* format.
   Either push after the wipe and use `twrp install`, or use `adb sideload` from TWRP.
 - **Don't improvise wipes.** The ROM thread's exact order (Format Data → Advanced Wipe

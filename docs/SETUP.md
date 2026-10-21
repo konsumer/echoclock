@@ -26,9 +26,12 @@ Versions, URLs and checksums are pinned in one place: [`install/config.env`](../
 
 ## Host support
 
-- **Bootloader unlock:** Windows or Linux only. amonet's XDA instructions do not support
-  macOS, and macOS's USB stack can wedge `fastbrick` / `fastboot getvar`. On macOS, use a
-  Linux VM with USB passthrough, a Raspberry Pi, or a Windows PC.
+- **Bootloader unlock:** macOS uses the bundled pyusb client (`install/fbflash.py`);
+  Linux/Windows use amonet's patched `bin/fastboot`. Stock platform-tools fastboot cannot
+  send the oversized `brick` payload (`Could not resparse file for partition: brick`, or
+  `restricted on locked hw`). macOS needs Python 3 + libusb.
+  Full macOS options (pyusb, patched-fastboot override, VM fallback, Docker limits,
+  recovery): [`install/MACOS.md`](../install/MACOS.md).
 - **After the unlock:** macOS is fine for TWRP/`adb`, building the APK, and provisioning.
   `brew install android-platform-tools coreutils`.
 

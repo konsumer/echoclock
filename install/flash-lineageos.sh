@@ -20,6 +20,9 @@ DRY_RUN=0
 SKIP_UNLOCK=0
 USE_SIDELOAD=0
 ASSUME_YES=${ASSUME_YES:-0}
+FASTBOOT_OVERRIDE="${AMONET_FASTBOOT:-}"
+PYUSB_CLIENT="$HERE/fbflash.py"
+PYUSB_UNLOCK=0
 
 AMONET_ZIP="$HERE/dl/$AMONET_FILE"
 ROM_ZIP="$HERE/dl/$ROM_FILE"
@@ -46,15 +49,18 @@ Options:
                     required when more than one device is attached
       --skip-unlock use when the device is already unlocked / already in TWRP
       --sideload    flash with 'adb sideload' instead of pushing zips to /sdcard
+      --fastboot P  force this patched amonet fastboot (instead of the bundle's
+                    on Linux/Windows, or pyusb on macOS)
   -h, --help        show this help
 
 Steps:
   1. sanity-check adb/fastboot and install/dl/$AMONET_FILE
   2. refusal-safe identity check: fastboot product == $CODENAME before unlock
      (or ro.product.device/name + ro.boot.hardware when already in TWRP)
-  3. unlock: extract the amonet bundle, run fastbrick.sh interactively (loud
-     anti-rollback warning, typed YES required). Put the device in fastboot first:
-     power off, hold Volume Down + Volume Up + Mute until '=> FASTBOOT mode...'
+  3. unlock: extract the amonet bundle and run its fastbrick.sh with the bundle's
+     patched fastboot (Linux/Windows only; loud anti-rollback warning, typed YES).
+     Put the device in fastboot first: power off, hold Volume Down + Volume Up +
+     Mute until '=> FASTBOOT mode...'
   4. TWRP: 'twrp wipe system/cache/dalvik', 'twrp format data', then push the zips
      (or 'twrp sideload' + 'adb sideload'), verify sha256 ON DEVICE, 'twrp install'
      the ROM then GApps, 'twrp reboot'
@@ -64,14 +70,14 @@ Notes:
   * 'twrp format data' erases internal storage, so the zips are pushed AFTER the
     wipes (or streamed with adb sideload) — never lost mid-flash.
   * This script never flashes preloader/lk/tee.
-  * amonet is supported on Windows and Linux. macOS works for provisioning after
-    LineageOS boots, but its USB stack can wedge fastbrick; use a Linux host if it
-    does.
+  * The unlock uses amonet's patched fastboot on Linux/Windows, and the bundled
+    install/fbflash.py pyusb client on macOS. Stock host fastboot cannot send the
+    oversized 'brick' payload. --fastboot PATH forces a patched fastboot instead.
   * First boot after flashing takes 5-10 minutes; then enable USB debugging and
     run ./install/provision.sh.
 
 Environment overrides: ALLOW_UNKNOWN_DEVICE=1 skips the identity refusal (dangerous),
-ASSUME_YES=1 acts like --yes.
+ASSUME_YES=1 acts like --yes, AMONET_FASTBOOT=/path/to/fastboot = --fastboot.
 EOF
 }
 
@@ -84,6 +90,8 @@ while [[ $# -gt 0 ]]; do
     --serial=*) ec_set_serial "${1#--serial=}" ;;
     --skip-unlock) SKIP_UNLOCK=1 ;;
     --sideload) USE_SIDELOAD=1 ;;
+    --fastboot) FASTBOOT_OVERRIDE="${2:-}"; shift ;;
+    --fastboot=*) FASTBOOT_OVERRIDE="${1#--fastboot=}" ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
   shift
@@ -99,6 +107,28 @@ run() { # execute a mutating command, or print it in --dry-run
   else
     "$@"
   fi
+}
+
+# ensure_pyusb — print a python3 that can import usb.core. Creates install/.venv
+# and installs pyusb on first use when needed. Requires libusb.
+ensure_pyusb() {
+  local venv="$HERE/.venv" py
+  py=$(command -v python3 || true)
+  [[ -n "$py" ]] || die "python3 not found — install Python 3 or use a Linux/Windows host"
+  if "$py" -c 'import usb.core, usb.util' >/dev/null 2>&1; then
+    printf '%s\n' "$py"
+    return 0
+  fi
+  if [[ ! -x "$venv/bin/python" ]]; then
+    info "creating $venv for the pyusb fastboot client"
+    "$py" -m venv "$venv" || die "could not create $venv"
+  fi
+  if ! "$venv/bin/python" -c 'import usb.core, usb.util' >/dev/null 2>&1; then
+    info "installing pyusb into $venv"
+    "$venv/bin/pip" install -q pyusb \
+      || die "pip install pyusb failed (libusb is required; macOS: brew install libusb)"
+  fi
+  printf '%s\n' "$venv/bin/python"
 }
 
 twrp_candidates() { adb devices | awk 'NR > 1 && ($2 == "device" || $2 == "recovery") { print $1 }'; }
@@ -155,7 +185,7 @@ verify_on_device() { # SERIAL REMOTE_PATH EXPECTED_SHA
   fi
   want=$(printf '%s' "$exp" | tr 'A-Z' 'a-z')
   if [[ -z "$want" ]]; then
-    warn "no pinned checksum for $(basename "$rp"); on-device sha256: $actual"
+    warn "no pinned checksum for ${rp##*/}; on-device sha256: $actual"
   elif [[ "$actual" != "$want" ]]; then
     die "on-device sha256 mismatch for $rp
        expected: $want
@@ -257,11 +287,14 @@ if [[ "$STAGE" == unlock ]]; then
      It is only distributed via XDA (login required): $AMONET_PAGE
      Save it under that exact name and re-run."
   fi
+  if [[ "$(uname -s)" == "Darwin" && -z "$FASTBOOT_OVERRIDE" ]]; then
+    PYUSB_UNLOCK=1
+    info "macOS: using the pyusb fastboot client (stock fastboot cannot send the oversized payload)"
+  fi
+  if [[ -n "$FASTBOOT_OVERRIDE" && ! -x "$FASTBOOT_OVERRIDE" ]]; then
+    die "--fastboot path is not executable: $FASTBOOT_OVERRIDE"
+  fi
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-      warn "amonet's XDA instructions cover Windows and Linux only; macOS is unsupported"
-      warn "if fastbrick stalls, use a Linux host (Raspberry Pi or a VM with USB passthrough)"
-    fi
     SERIAL=$(fastboot_dev)
     if [[ -n "$CAND" ]]; then
       info "adb is also reachable at $CAND (fine; unlock still runs over fastboot)"
@@ -273,6 +306,11 @@ if [[ "$STAGE" == unlock ]]; then
   else
     warn "no fastboot device attached (plan only)"
   fi
+  if [[ -n "$FASTBOOT_OVERRIDE" ]]; then
+    info "fastboot override: $FASTBOOT_OVERRIDE"
+  elif [[ "$PYUSB_UNLOCK" -eq 1 ]]; then
+    info "unlock method: pyusb client ($PYUSB_CLIENT)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -283,6 +321,7 @@ cat >&2 <<EOF
 $(printf '%sPLAN%s' "$C_BOLD" "$C_RESET")
   target      : $CODENAME (Echo Show 5 gen 2, MT8163)
   stage       : $([[ "$STAGE" == unlock ]] && echo "unlock with amonet, then TWRP" || echo "TWRP only")
+  unlock      : $([[ "$STAGE" == unlock ]] && { [[ "$PYUSB_UNLOCK" -eq 1 ]] && echo "pyusb client (macOS)" || echo "amonet fastbrick"; } || echo "skipped")
   flash mode  : $([[ "$USE_SIDELOAD" -eq 1 ]] && echo "adb sideload" || echo "push + twrp install (on-device sha256 verified)")
   ROM         : $ROM_FILE
   GApps       : $GAPPS_FILE
@@ -302,9 +341,12 @@ fi
 if [[ "$DRY_RUN" -eq 1 ]]; then
   info "[dry-run] no changes made. Would run:"
   if [[ "$STAGE" == unlock ]]; then
-    info "  unzip $AMONET_ZIP -> temp dir; keep bundled fastboot if it runs on this host"
-    info "  (substitute host fastboot/adb only if the bundle ships Linux ELF binaries)"
-    info "  (cd <temp>/... && bash ./fastbrick.sh)   # interactive, typed YES"
+    if [[ "$PYUSB_UNLOCK" -eq 1 ]]; then
+      info "  unzip $AMONET_ZIP -> temp dir; run fbflash.py <fastbrick.img> brick via pyusb"
+    else
+      info "  unzip $AMONET_ZIP -> temp dir; use its patched bin/fastboot (never the host one)"
+      info "  (cd <temp>/... && bash ./fastbrick.sh)   # interactive, typed YES"
+    fi
     info "  wait for TWRP over adb"
   fi
   info "  adb -s <serial> shell twrp wipe system"
@@ -332,49 +374,48 @@ if [[ "$STAGE" == unlock ]]; then
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/echoclock-amonet.XXXXXX")
   TMP_DIRS="$TMP_DIRS $TMP"
   unzip -q -o "$AMONET_ZIP" -d "$TMP"
-  FASTBRICK=$(find "$TMP" -maxdepth 3 -type f -name fastbrick.sh -print 2>/dev/null | sed -n '1p')
-  [[ -n "$FASTBRICK" ]] || die "fastbrick.sh not found inside $AMONET_FILE — is this the right bundle?"
+  FASTBRICK_IMG=$(find "$TMP" -maxdepth 4 -type f -name fastbrick.img -print 2>/dev/null | sed -n '1p')
+  [[ -n "$FASTBRICK_IMG" ]] || die "fastbrick.img not found inside $AMONET_FILE — is this the right bundle?"
 
-  # The bundle nests its tools under amonet/bin (older bundles used bin/).
-  # Keep the bundled fastboot when it runs on this host; only replace Linux ELF
-  # binaries on macOS.
-  while IFS= read -r f; do
-    [[ -n "$f" && -f "$f" ]] || continue
-    if [[ "$(uname -s)" == "Darwin" ]] && file -b "$f" 2>/dev/null | grep -qi 'ELF'; then
-      tool=$(basename "$f")
-      host_tool=$(command -v "$tool" || true)
-      [[ -n "$host_tool" ]] || die "bundle ships a Linux $tool and no host $tool was found on PATH"
-      warn "bundle $tool is a Linux ELF — substituting host $tool for macOS"
-      cp -f "$host_tool" "$f"
-      chmod +x "$f"
-    fi
-  done < <(find "$TMP" -maxdepth 4 -type f \( -name fastboot -o -name adb \) -path '*/bin/*' -print 2>/dev/null)
-  find "$TMP" -maxdepth 5 -type f \( -name fastboot -o -name fastboot32 -o -name adb \) \
-    -exec chmod +x {} + 2>/dev/null || true
-  chmod +x "$FASTBRICK"
+  if [[ "$PYUSB_UNLOCK" -eq 1 ]]; then
+    PY=$(ensure_pyusb) || die "pyusb setup failed"
+    info "running amonet fastbrick payload through the pyusb client"
+    info "sending $(wc -c < "$FASTBRICK_IMG" | tr -d ' ') bytes to the 'brick' partition"
+    info "the device may reset during/after the transfer and boot TWRP; that is expected"
+    "$PY" "$PYUSB_CLIENT" "$FASTBRICK_IMG" brick --serial "$SERIAL" --read-timeout 180 \
+      || die "pyusb fastbrick failed; power-cycle the device, re-enter fastboot, and retry"
+  else
+    FASTBRICK=$(find "$TMP" -maxdepth 3 -type f -name fastbrick.sh -print 2>/dev/null | sed -n '1p')
+    [[ -n "$FASTBRICK" ]] || die "fastbrick.sh not found inside $AMONET_FILE — is this the right bundle?"
 
-  # fastbrick.sh calls 'timeout 8'; native macOS has no timeout. Make Homebrew's
-  # gtimeout visible as 'timeout' for the bundle's subprocesses.
-  if ! type -P timeout >/dev/null 2>&1; then
-    if type -P gtimeout >/dev/null 2>&1; then
-      SHIM=$(mktemp -d "${TMPDIR:-/tmp}/echoclock-timeout.XXXXXX")
-      TMP_DIRS="$TMP_DIRS $SHIM"
-      printf '#!/bin/sh\nexec gtimeout "$@"\n' > "$SHIM/timeout"
-      chmod +x "$SHIM/timeout"
-      PATH="$SHIM:$PATH"
-      export PATH
-      info "no 'timeout' on PATH — using gtimeout for fastbrick.sh"
-    else
-      die "fastbrick.sh needs GNU timeout. Install coreutils (macOS: brew install coreutils) and retry"
+    # The bundle nests its tools under amonet/bin (older bundles used bin/).
+    # Do NOT replace its fastboot with the host one: amonet ships a patched build
+    # specifically so it can flash the oversized 'brick' payload. Host fastboot
+    # fails with "Could not resparse file for partition: brick".
+    find "$TMP" -maxdepth 5 -type f \( -name fastboot -o -name fastboot32 -o -name adb \) \
+      -exec chmod +x {} + 2>/dev/null || true
+    chmod +x "$FASTBRICK"
+    BUNDLED_FASTBOOT=$(find "$TMP" -maxdepth 4 -type f -name fastboot -path '*/bin/*' -print 2>/dev/null | sed -n '1p')
+    [[ -n "$BUNDLED_FASTBOOT" ]] || die "amonet bundle has no bin/fastboot — re-download $AMONET_FILE"
+    if [[ -n "$FASTBOOT_OVERRIDE" ]]; then
+      info "using fastboot override: $FASTBOOT_OVERRIDE"
+      cp -f "$FASTBOOT_OVERRIDE" "$BUNDLED_FASTBOOT"
+      chmod +x "$BUNDLED_FASTBOOT"
     fi
+    if ! ec_timeout 5 "$BUNDLED_FASTBOOT" --version >/dev/null 2>&1; then
+      die "amonet's bundled fastboot cannot run on this host (it is a Linux ELF)
+     Use --fastboot /path/to/patched/fastboot, or run the unlock on Linux/Windows."
+    fi
+    type -P timeout >/dev/null 2>&1 \
+      || die "fastbrick.sh needs GNU 'timeout' on PATH (install coreutils)"
+
+    info "running amonet fastbrick.sh interactively from $(dirname "$FASTBRICK")"
+    info "put the device in '=> FASTBOOT mode...' before it starts waiting"
+    ( cd "$(dirname "$FASTBRICK")" && bash ./fastbrick.sh )
   fi
 
-  info "running amonet fastbrick.sh interactively from $(dirname "$FASTBRICK")"
-  info "put the device in '=> FASTBOOT mode...' before it starts waiting"
-  ( cd "$(dirname "$FASTBRICK")" && bash ./fastbrick.sh )
-
-  info "unlock finished — waiting up to 10 min for TWRP over adb"
-  info "the exploit can take several minutes after fastbrick.sh returns; do not unplug"
+  info "unlock payload sent — waiting up to 10 min for TWRP over adb"
+  info "the device may reset and take a few minutes to boot TWRP; do not unplug"
   SERIAL=$(wait_for_twrp 600 || true)
   if [[ -z "$SERIAL" ]]; then
     warn "TWRP did not show up over adb"
@@ -414,21 +455,25 @@ twrp_cmd "$SERIAL" wipe dalvik
 twrp_cmd "$SERIAL" format data || twrp_cmd "$SERIAL" wipe data
 
 flash_one() { # LOCAL EXPECTED LABEL -> 0 ok, 1 push/verify failed
-  local lf=$1 exp=$2 label=$3 rp="$SDCARD/$(basename "$lf")"
+  local lf=$1 exp=$2 label=$3 base rp
+  lf=${lf%/}
+  base=${lf##*/}
+  [[ -n "$base" ]] || die "cannot determine filename from: '$lf'"
+  rp="$SDCARD/$base"
   info "pushing $label to $rp"
   if ! adb -s "$SERIAL" push "$lf" "$rp"; then
     warn "adb push failed for $label"
     return 1
   fi
   verify_on_device "$SERIAL" "$rp" "$exp" || return 1
-  info "installing $label via TWRP: $(basename "$lf")"
+  info "installing $label via TWRP: $base"
   twrp_cmd "$SERIAL" install "$rp"
   return 0
 }
 
 sideload_one() { # LOCAL LABEL
-  local f=$1 label=$2
-  info "sideloading $label: $(basename "$f")"
+  local f=$1 label=$2 base=${f##*/}
+  info "sideloading $label: $base"
   twrp_cmd "$SERIAL" sideload
   wait_adb_state "$SERIAL" sideload 120 || die "device did not enter sideload mode"
   adb -s "$SERIAL" sideload "$f" || die "adb sideload failed for $label"
@@ -452,7 +497,7 @@ else
 fi
 
 info "rebooting to system"
-twrp_cmd "$SERIAL" reboot
+twrp_cmd "$SERIAL" reboot system || adb -s "$SERIAL" reboot
 
 cat >&2 <<EOF
 

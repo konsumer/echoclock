@@ -162,6 +162,9 @@ install_apk() { # APK_PATH LABEL
   info "installing $label: $(basename "$apk")"
   out=$(adb -s "$SERIAL" install -r "$apk" 2>&1) || {
     printf '%s\n' "$out" | sed 's/^/       /' >&2
+    if ! ec_timeout 5 adb -s "$SERIAL" get-state >/dev/null 2>&1; then
+      die "device disconnected during adb install — reconnect USB, wake the screen, then re-run"
+    fi
     die "adb install failed for $(basename "$apk")"
   }
   printf '%s\n' "$out" | tr -d '\r' | sed 's/^/       /' >&2

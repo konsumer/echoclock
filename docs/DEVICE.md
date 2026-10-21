@@ -61,9 +61,11 @@ gated), so it cannot be auto-downloaded — place it in `install/dl/`:
 - File: `amonet-cronos-v2.0.1.zip` (current release at time of writing)
 
 The bundle ships `fastbrick.sh` (Linux), `.bat` / `.ps1` (Windows), `backup.*`,
-`restore.*`, `boot-fastboot.*`, `boot-recovery.*`, and `bin/` (payload blobs + firmware
-images). macOS is **not** a supported host for the unlock, even though a Mach-O
-`bin/fastboot` is included. It also installs **TWRP**.
+`restore.*`, `boot-fastboot.*`, `boot-recovery.*`, and `bin/` (payload blobs, firmware
+images, and a **patched Linux ELF `fastboot`** plus a Windows `.exe`). That patched
+fastboot is required for the oversized `brick` payload; host fastboot refuses it with
+`Could not resparse file for partition: brick`. macOS uses this repo's
+`install/fbflash.py` (pyusb) instead of fastboot. It also installs **TWRP**.
 
 ### Safety
 
